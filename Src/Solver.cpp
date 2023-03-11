@@ -130,12 +130,11 @@ Solver::Solver() {
     constraint.setWeight(1.0f - powf(1.0f - k, 1.0f / SOLVER_ITERS));
   }
 
-  std::vector<uint32_t> indices;
-  indices.resize(2 * this->_distanceConstraints.size());
+  this->_distanceConstraintLines.resize(2 * this->_distanceConstraints.size());
   for (size_t i = 0; i < this->_distanceConstraints.size(); ++i) {
     const DistanceConstraint& constraint = this->_distanceConstraints[i];
-    indices[2 * i] = constraint.getNode(0).id;
-    indices[2 * i + 1] = constraint.getNode(1).id;
+    this->_distanceConstraintLines[2 * i] = constraint.getNode(0).id;
+    this->_distanceConstraintLines[2 * i + 1] = constraint.getNode(1).id;
   }
 
   this->_vertices.resize(this->_nodes.size());
