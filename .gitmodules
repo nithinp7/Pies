@@ -1,3 +1,6 @@
 [submodule "Extern/glm"]
 	path = Extern/glm
 	url = git@github.com:g-truc/glm
+[submodule "Extern/tetgen"]
+	path = Extern/tetgen
+	url = git@github.com:libigl/tetgen
