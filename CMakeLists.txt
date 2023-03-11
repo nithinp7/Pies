@@ -31,5 +31,9 @@ if (NOT TARGET glm)
   add_subdirectory(Extern/glm)
 endif()
 
+target_include_directories (Pies
+    PUBLIC
+      Include
+      Extern/glm)
 target_link_libraries(${PROJECT_NAME} PUBLIC glm)
 

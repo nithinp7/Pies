@@ -1,9 +1,10 @@
 #pragma once
 
 #include <glm/glm.hpp>
+
 #include <cstdint>
 
-namespace PiesForAlthea {
+namespace Pies {
 struct Node {
   // This ID represents the index of this node within
   // the global position and force vectors.
@@ -14,4 +15,4 @@ struct Node {
   glm::vec3 velocity{};
   float mass = 1.0f;
 };
-} // namespace PiesForAlthea
+} // namespace Pies

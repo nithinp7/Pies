@@ -1,6 +1,6 @@
 #include "Constraints.h"
 
-namespace PiesForAlthea {
+namespace Pies {
 void DistanceConstraintProjection::operator()(
     const std::array<Node*, 2>& nodes,
     std::array<glm::vec3, 2>& projected) const {
@@ -36,4 +36,4 @@ void PositionConstraintProjection::operator()(
 PositionConstraint createPositionConstraint(uint32_t id, Node* node) {
   return PositionConstraint(id, 1.0f, {node->position}, {node});
 }
-} // namespace PiesForAlthea
+} // namespace Pies

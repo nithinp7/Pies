@@ -1,6 +1,4 @@
-#include "Simulation.h"
-
-#include <Althea/FrameContext.h>
+#include "Solver.h"
 
 #define GRID_WIDTH 10
 #define GRID_HEIGHT 10
@@ -12,10 +10,9 @@
 #define FRICTION 0.1f
 
 #define SOLVER_ITERS 4
+#define SOLVER_SUBSTEPS 10
 
-using namespace AltheaEngine;
-
-namespace PiesForAlthea {
+namespace Pies {
 namespace {
 struct GridId {
   uint32_t x;
@@ -40,28 +37,7 @@ uint32_t gridIdToNodeId(const GridId& gridId) {
 
 static bool releaseHinge = false;
 
-/*static*/
-void Simulation::initInputBindings(InputManager& inputManager) {
-  inputManager.addKeyBinding(
-    {GLFW_KEY_B, GLFW_PRESS, 0},
-    []() {
-      releaseHinge = true;
-    });
-}
-
-/*static*/
-void Simulation::buildPipeline(GraphicsPipelineBuilder& builder) {
-  builder.setPrimitiveType(PrimitiveType::LINES)
-      .addVertexInputBinding<glm::vec3>()
-      .addVertexAttribute(VertexAttributeType::VEC3, 0)
-
-      .addVertexShader(GProjectDirectory + "/Shaders/Lines.vert")
-      .addFragmentShader(GProjectDirectory + "/Shaders/Lines.frag");
-}
-
-Simulation::Simulation(
-    const Application& app,
-    SingleTimeCommandBuffer& commandBuffer) {
+Solver::Solver() {
   glm::vec3 posOffs = glm::vec3(-10.0f, 5.0f, 0.0f);
   float scale = 0.5f;
 
@@ -162,21 +138,17 @@ Simulation::Simulation(
     indices[2 * i + 1] = constraint.getNode(1).id;
   }
 
-  this->_indexBuffer = IndexBuffer(app, commandBuffer, std::move(indices));
-  this->_vertexBuffer =
-      DynamicVertexBuffer<glm::vec3>(app, commandBuffer, this->_nodes.size());
-
   this->_vertices.resize(this->_nodes.size());
   for (uint32_t i = 0; i < this->_nodes.size(); ++i) {
     this->_vertices[i] = this->_nodes[i].position;
   }
 }
 
-void Simulation::tick(const Application& app, float /*deltaTime*/) {
-  float deltaTime = 0.005f;
+void Solver::tick(float timestep) {
+  float deltaTime = timestep / SOLVER_SUBSTEPS;
 
   // Time substeps
-  for (int substep = 0; substep < 10; ++substep) {
+  for (int substep = 0; substep < SOLVER_SUBSTEPS; ++substep) {
     // Apply external forces and advect nodes
     for (Node& node : this->_nodes) {
       node.velocity += glm::vec3(0.0f, -GRAVITY, 0.0f) * deltaTime;
@@ -204,9 +176,9 @@ void Simulation::tick(const Application& app, float /*deltaTime*/) {
 
     // Compute new velocity and construct new vertex positions
     for (uint32_t i = 0; i < this->_nodes.size(); ++i) {
-      this->_nodes[i].velocity = (1.0f - DAMPING) *
-                                (this->_nodes[i].position - this->_vertices[i]) /
-                                deltaTime;
+      this->_nodes[i].velocity =
+          (1.0f - DAMPING) * (this->_nodes[i].position - this->_vertices[i]) /
+          deltaTime;
 
       if (this->_nodes[i].position.y <= -8.0f) {
         this->_nodes[i].velocity.x *= 1.0f - FRICTION;
@@ -216,24 +188,5 @@ void Simulation::tick(const Application& app, float /*deltaTime*/) {
       this->_vertices[i] = this->_nodes[i].position;
     }
   }
-
-  this->_vertexBuffer.updateVertices(
-      app.getCurrentFrameRingBufferIndex(),
-      this->_vertices);
 }
-
-void Simulation::draw(const DrawContext& context) const {
-  context.bindDescriptorSets();
-  context.bindIndexBuffer(this->_indexBuffer);
-  this->_vertexBuffer.bind(
-      context.getFrame().frameRingBufferIndex,
-      context.getCommandBuffer());
-  vkCmdDrawIndexed(
-      context.getCommandBuffer(),
-      static_cast<uint32_t>(this->_indexBuffer.getIndexCount()),
-      1,
-      0,
-      0,
-      0);
-}
-} // namespace PiesForAlthea
+} // namespace Pies

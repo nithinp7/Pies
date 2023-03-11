@@ -131,4 +131,4 @@ PositionConstraint createPositionConstraint(uint32_t id, Node* node);
 // };
 // typedef Constraint<2, CollisionConstraintProjection> CollisionConstraint;
 // CollisionConstraint createCollisionConstraint(uint32_t id, Node* a, Node* b);
-} // namespace PiesForAlthea
+} // namespace Pies
