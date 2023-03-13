@@ -35,8 +35,6 @@ uint32_t gridIdToNodeId(const GridId& gridId) {
 }
 } // namespace
 
-static bool releaseHinge = false;
-
 Solver::Solver() {
   glm::vec3 posOffs = glm::vec3(-10.0f, 5.0f, 0.0f);
   float scale = 0.5f;
@@ -125,8 +123,78 @@ Solver::Solver() {
     }
   }
 
+  this->_triangles.reserve(
+      3 * 2 *
+      (2 * GRID_WIDTH * GRID_HEIGHT + 2 * GRID_WIDTH * GRID_DEPTH +
+       2 * GRID_HEIGHT * GRID_DEPTH));
+  for (uint32_t i = 0; i < GRID_WIDTH - 1; ++i) {
+    for (uint32_t j = 0; j < GRID_HEIGHT - 1; ++j) {
+      this->_triangles.push_back(gridIdToNodeId({i, j, 0}));
+      this->_triangles.push_back(gridIdToNodeId({i + 1, j, 0}));
+      this->_triangles.push_back(gridIdToNodeId({i + 1, j + 1, 0}));
+
+      this->_triangles.push_back(gridIdToNodeId({i, j, 0}));
+      this->_triangles.push_back(gridIdToNodeId({i + 1, j + 1, 0}));
+      this->_triangles.push_back(gridIdToNodeId({i, j + 1, 0}));
+
+      this->_triangles.push_back(gridIdToNodeId({i, j, GRID_DEPTH - 1}));
+      this->_triangles.push_back(gridIdToNodeId({i + 1, j, GRID_DEPTH - 1}));
+      this->_triangles.push_back(
+          gridIdToNodeId({i + 1, j + 1, GRID_DEPTH - 1}));
+
+      this->_triangles.push_back(gridIdToNodeId({i, j, GRID_DEPTH - 1}));
+      this->_triangles.push_back(
+          gridIdToNodeId({i + 1, j + 1, GRID_DEPTH - 1}));
+      this->_triangles.push_back(gridIdToNodeId({i, j + 1, GRID_DEPTH - 1}));
+    }
+  }
+
+  for (uint32_t i = 0; i < GRID_WIDTH - 1; ++i) {
+    for (uint32_t k = 0; k < GRID_DEPTH - 1; ++k) {
+      this->_triangles.push_back(gridIdToNodeId({i, 0, k}));
+      this->_triangles.push_back(gridIdToNodeId({i + 1, 0, k}));
+      this->_triangles.push_back(gridIdToNodeId({i + 1, 0, k + 1}));
+
+      this->_triangles.push_back(gridIdToNodeId({i, 0, k}));
+      this->_triangles.push_back(gridIdToNodeId({i + 1, 0, k + 1}));
+      this->_triangles.push_back(gridIdToNodeId({i, 0, k + 1}));
+
+      this->_triangles.push_back(gridIdToNodeId({i, GRID_HEIGHT - 1, k}));
+      this->_triangles.push_back(gridIdToNodeId({i + 1, GRID_HEIGHT - 1, k}));
+      this->_triangles.push_back(
+          gridIdToNodeId({i + 1, GRID_HEIGHT - 1, k + 1}));
+
+      this->_triangles.push_back(gridIdToNodeId({i, GRID_HEIGHT - 1, k}));
+      this->_triangles.push_back(
+          gridIdToNodeId({i + 1, GRID_HEIGHT - 1, k + 1}));
+      this->_triangles.push_back(gridIdToNodeId({i, GRID_HEIGHT - 1, k + 1}));
+    }
+  }
+
+  for (uint32_t j = 0; j < GRID_HEIGHT - 1; ++j) {
+    for (uint32_t k = 0; k < GRID_DEPTH - 1; ++k) {
+      this->_triangles.push_back(gridIdToNodeId({0, j, k}));
+      this->_triangles.push_back(gridIdToNodeId({0, j + 1, k}));
+      this->_triangles.push_back(gridIdToNodeId({0, j + 1, k + 1}));
+
+      this->_triangles.push_back(gridIdToNodeId({0, j, k}));
+      this->_triangles.push_back(gridIdToNodeId({0, j + 1, k + 1}));
+      this->_triangles.push_back(gridIdToNodeId({0, j, k + 1}));
+
+      this->_triangles.push_back(gridIdToNodeId({GRID_WIDTH - 1, j, k}));
+      this->_triangles.push_back(gridIdToNodeId({GRID_WIDTH - 1, j + 1, k}));
+      this->_triangles.push_back(
+          gridIdToNodeId({GRID_WIDTH - 1, j + 1, k + 1}));
+
+      this->_triangles.push_back(gridIdToNodeId({GRID_WIDTH - 1, j, k}));
+      this->_triangles.push_back(
+          gridIdToNodeId({GRID_WIDTH - 1, j + 1, k + 1}));
+      this->_triangles.push_back(gridIdToNodeId({GRID_WIDTH - 1, j, k + 1}));
+    }
+  }
+
   for (DistanceConstraint& constraint : this->_distanceConstraints) {
-    float k = 1.0f;
+    float k = 0.85f;
     constraint.setWeight(1.0f - powf(1.0f - k, 1.0f / SOLVER_ITERS));
   }
 

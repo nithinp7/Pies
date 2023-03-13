@@ -31,9 +31,15 @@ if (NOT TARGET glm)
   add_subdirectory(Extern/glm)
 endif()
 
+add_subdirectory(Extern/tetgen)
+
 target_include_directories (Pies
     PUBLIC
       Include
-      Extern/glm)
+      Extern/glm
+      Extern/tetgen)
+
 target_link_libraries(${PROJECT_NAME} PUBLIC glm)
+target_link_libraries(${PROJECT_NAME} PUBLIC tetgen)
+
 
