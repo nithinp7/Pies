@@ -25,6 +25,7 @@ public:
     float metallic{};
   };
 
+  bool renderStateDirty = true;
   bool releaseHinge = false;
 
   Solver() = default;

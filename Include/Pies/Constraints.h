@@ -28,15 +28,19 @@ protected:
   // The constant matrix B.
   // Matrix<NodeCount, NodeCount> _B;
 
-  // A list of nodes involved in this constraint.
-  std::array<Node*, NodeCount> _nodes;
-
   // The auxiliary variable containing projected node configurations.
   std::array<glm::vec3, NodeCount> _projectedConfig;
 
   TProjection _projection;
 
 public:
+  // TODO: rethink constraints owning Node pointers... global node list may
+  // reallocate between frames. _nodes is currently public to fixup the node
+  // list on reallocation - it is a dirty hack and should be removed soon.
+
+  // A list of nodes involved in this constraint.
+  std::array<Node*, NodeCount> _nodes;
+
   Constraint(
       uint32_t id,
       float w,

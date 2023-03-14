@@ -2,9 +2,7 @@
 
 namespace Pies {
 
-Solver::Solver(const SolverOptions& options) : _options(options) {
-  createBox(glm::vec3(-10.0f, 5.0f, 0.0f), 0.5f, 0.85f);
-}
+Solver::Solver(const SolverOptions& options) : _options(options) {}
 
 void Solver::tick(float /*timestep*/) {
   float deltaTime =
@@ -15,8 +13,8 @@ void Solver::tick(float /*timestep*/) {
     // Apply external forces and advect nodes
     for (Node& node : this->_nodes) {
       node.prevPosition = node.position;
-      node.position +=
-          node.velocity * deltaTime + glm::vec3(0.0f, -this->_options.gravity, 0.0f) *
+      node.position += node.velocity * deltaTime +
+                       glm::vec3(0.0f, -this->_options.gravity, 0.0f) *
                            deltaTime * deltaTime;
     }
 
