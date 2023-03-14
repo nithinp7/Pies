@@ -9,7 +9,7 @@ void Solver::tick(float /*timestep*/) {
       this->_options.fixedTimestepSize / this->_options.timeSubsteps;
 
   // Time substeps
-  for (int substep = 0; substep < this->_options.timeSubsteps; ++substep) {
+  for (uint32_t substep = 0; substep < this->_options.timeSubsteps; ++substep) {
     // Apply external forces and advect nodes
     for (Node& node : this->_nodes) {
       node.prevPosition = node.position;

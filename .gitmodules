@@ -4,3 +4,6 @@
 [submodule "Extern/tetgen"]
 	path = Extern/tetgen
 	url = git@github.com:libigl/tetgen
+[submodule "Extern/parallel-hashmap"]
+	path = Extern/parallel-hashmap
+	url = git@github.com:greg7mdp/parallel-hashmap
