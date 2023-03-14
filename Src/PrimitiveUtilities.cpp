@@ -7,7 +7,7 @@ namespace Pies {
 namespace {
 float randf() { return static_cast<float>(double(std::rand()) / RAND_MAX); }
 
-glm::vec3 randColor() { return glm::vec3(randf(), randf(), randf()); }
+glm::vec3 randColor() { return 255.0f * glm::vec3(randf(), randf(), randf()); }
 
 struct GridId {
   uint32_t x;
@@ -35,30 +35,9 @@ struct Grid {
            static_cast<uint32_t>(nodeIdOffset);
   }
 };
-
-// TODO: ... this is the worst hack yet...
-// Need to rethink constraints keeping Node pointers, given that the Node list
-// can grow and potentially reallocate. This fixes up the constraint node
-// pointers, by computing their old and new indices.
-template <typename TConstraint>
-void fixupNodePointers(
-    std::vector<TConstraint>& constraints,
-    size_t previousConstraintCount,
-    Node* pPrevNodeStart,
-    std::vector<Node>& currentNodes) {
-  for (size_t i = 0; i < previousConstraintCount; ++i) {
-    TConstraint& constraint = constraints[i];
-    for (Node*& pNode : constraint._nodes) {
-      size_t index = static_cast<size_t>(pNode - pPrevNodeStart);
-      pNode = &currentNodes[index];
-    }
-  }
-}
 } // namespace
 
 void Solver::createBox(const glm::vec3& translation, float scale, float k) {
-  Node* pPrevNodeStart = this->_nodes.data();
-
   Grid grid{5, 5, 5};
 
   size_t currentNodeCount = this->_nodes.size();
@@ -117,22 +96,22 @@ void Solver::createBox(const glm::vec3& translation, float scale, float k) {
         if (i < (grid.width - 1)) {
           this->_distanceConstraints.push_back(createDistanceConstraint(
               this->_constraintId++,
-              &this->_nodes[node000],
-              &this->_nodes[node100]));
+              this->_nodes[node000],
+              this->_nodes[node100]));
         }
 
         if (j < (grid.height - 1)) {
           this->_distanceConstraints.push_back(createDistanceConstraint(
               this->_constraintId++,
-              &this->_nodes[node000],
-              &this->_nodes[node010]));
+              this->_nodes[node000],
+              this->_nodes[node010]));
         }
 
         if (k < (grid.depth - 1)) {
           this->_distanceConstraints.push_back(createDistanceConstraint(
               this->_constraintId++,
-              &this->_nodes[node000],
-              &this->_nodes[node001]));
+              this->_nodes[node000],
+              this->_nodes[node001]));
         }
 
         // Long diagonal constraints
@@ -140,20 +119,20 @@ void Solver::createBox(const glm::vec3& translation, float scale, float k) {
             k < (grid.depth - 1)) {
           this->_distanceConstraints.push_back(createDistanceConstraint(
               this->_constraintId++,
-              &this->_nodes[node000],
-              &this->_nodes[node111]));
+              this->_nodes[node000],
+              this->_nodes[node111]));
           this->_distanceConstraints.push_back(createDistanceConstraint(
               this->_constraintId++,
-              &this->_nodes[node100],
-              &this->_nodes[node011]));
+              this->_nodes[node100],
+              this->_nodes[node011]));
           this->_distanceConstraints.push_back(createDistanceConstraint(
               this->_constraintId++,
-              &this->_nodes[node010],
-              &this->_nodes[node101]));
+              this->_nodes[node010],
+              this->_nodes[node101]));
           this->_distanceConstraints.push_back(createDistanceConstraint(
               this->_constraintId++,
-              &this->_nodes[node001],
-              &this->_nodes[node110]));
+              this->_nodes[node001],
+              this->_nodes[node110]));
         }
       }
     }
@@ -280,24 +259,17 @@ void Solver::createBox(const glm::vec3& translation, float scale, float k) {
        i < this->_distanceConstraints.size();
        ++i) {
     const DistanceConstraint& constraint = this->_distanceConstraints[i];
-    this->_lines.push_back(constraint.getNode(0).id);
-    this->_lines.push_back(constraint.getNode(1).id);
+    this->_lines.push_back(constraint.getNodeId(0));
+    this->_lines.push_back(constraint.getNodeId(1));
   }
 
   this->_vertices.resize(this->_nodes.size());
-  for (uint32_t i = currentNodeCount; i < this->_nodes.size(); ++i) {
+  for (size_t i = currentNodeCount; i < this->_nodes.size(); ++i) {
     this->_vertices[i].position = this->_nodes[i].position;
     this->_vertices[i].baseColor = boxColor;
     this->_vertices[i].roughness = boxRoughness;
     this->_vertices[i].metallic = boxMetallic;
   }
-
-  // TODO: remove hack
-  fixupNodePointers(
-      this->_distanceConstraints,
-      currentDistConstraintsCount,
-      pPrevNodeStart,
-      this->_nodes);
 
   this->renderStateDirty = true;
 }

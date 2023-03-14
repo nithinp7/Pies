@@ -5,6 +5,7 @@
 #include <array>
 #include <cstdint>
 #include <stdexcept>
+#include <vector>
 
 namespace Pies {
 
@@ -28,25 +29,21 @@ protected:
   // The constant matrix B.
   // Matrix<NodeCount, NodeCount> _B;
 
+  // A list of nodes involved in this constraint.
+  std::array<uint32_t, NodeCount> _nodeIds;
+
   // The auxiliary variable containing projected node configurations.
   std::array<glm::vec3, NodeCount> _projectedConfig;
 
   TProjection _projection;
 
 public:
-  // TODO: rethink constraints owning Node pointers... global node list may
-  // reallocate between frames. _nodes is currently public to fixup the node
-  // list on reallocation - it is a dirty hack and should be removed soon.
-
-  // A list of nodes involved in this constraint.
-  std::array<Node*, NodeCount> _nodes;
-
   Constraint(
       uint32_t id,
       float w,
       const TProjection& projection,
-      const std::array<Node*, NodeCount>& nodes)
-      : _id(id), _w(w), _projection(std::move(projection)), _nodes(nodes) {}
+      const std::array<uint32_t, NodeCount>& nodeIds)
+      : _id(id), _w(w), _projection(std::move(projection)), _nodeIds(nodeIds) {}
 
   /**
    * @brief Initialize the constraint within the global stiffness matrix. Only
@@ -74,8 +71,8 @@ public:
    * manifold. Stores the projected configuration in the auxiliary variable.
    * Uses the TProjection template parameter to do the projection.
    */
-  void projectToAuxiliaryVariable() {
-    this->_projection(this->_nodes, this->_projectedConfig);
+  void projectToAuxiliaryVariable(const std::vector<Node>& nodes) {
+    this->_projection(nodes, this->_nodeIds, this->_projectedConfig);
   }
 
   /**
@@ -83,23 +80,23 @@ public:
    * manifold and directly updates the node positions. This is only used in the
    * PBD solver. Uses the TProjection template parameter to do the projection.
    */
-  void projectNodePositions() {
+  void projectNodePositions(std::vector<Node>& nodes) {
     std::array<glm::vec3, NodeCount> fixedPositions;
-    this->_projection(this->_nodes, fixedPositions);
+    this->_projection(nodes, this->_nodeIds, fixedPositions);
 
     for (uint32_t i = 0; i < NodeCount; ++i) {
-      this->_nodes[i]->position +=
-          this->_w * (fixedPositions[i] - this->_nodes[i]->position);
+      Node& node = nodes[this->_nodeIds[i]];
+      node.position += this->_w * (fixedPositions[i] - node.position);
     }
   }
 
-  const Node& getNode(uint32_t nodeIndex) const {
+  uint32_t getNodeId(uint32_t nodeIndex) const {
     if (nodeIndex >= NodeCount) {
       throw std::runtime_error(
           "Invalid nodeIndex given to Constraint::getNode.");
     }
 
-    return *this->_nodes[nodeIndex];
+    return this->_nodeIds[nodeIndex];
   }
 
   void setWeight(float w) { this->_w = w; }
@@ -109,21 +106,24 @@ struct DistanceConstraintProjection {
   float targetDistance;
 
   void operator()(
-      const std::array<Node*, 2>& nodes,
+      const std::vector<Node>& nodes,
+      const std::array<uint32_t, 2>& nodeIds,
       std::array<glm::vec3, 2>& projected) const;
 };
 typedef Constraint<2, DistanceConstraintProjection> DistanceConstraint;
-DistanceConstraint createDistanceConstraint(uint32_t id, Node* a, Node* b);
+DistanceConstraint
+createDistanceConstraint(uint32_t id, const Node& a, const Node& b);
 
 struct PositionConstraintProjection {
   glm::vec3 fixedPosition;
 
   void operator()(
-      const std::array<Node*, 1>& nodes,
+      const std::vector<Node>& nodes,
+      const std::array<uint32_t, 1>& nodeIds,
       std::array<glm::vec3, 1>& projected) const;
 };
 typedef Constraint<1, PositionConstraintProjection> PositionConstraint;
-PositionConstraint createPositionConstraint(uint32_t id, Node* node);
+PositionConstraint createPositionConstraint(uint32_t id, const Node& node);
 
 // struct CollisionConstraintProjection {
 //   glm::vec3 intersection;

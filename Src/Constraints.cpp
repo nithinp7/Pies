@@ -2,9 +2,13 @@
 
 namespace Pies {
 void DistanceConstraintProjection::operator()(
-    const std::array<Node*, 2>& nodes,
+    const std::vector<Node>& nodes,
+    const std::array<uint32_t, 2>& nodeIds,
     std::array<glm::vec3, 2>& projected) const {
-  glm::vec3 diff = nodes[1]->position - nodes[0]->position;
+  const Node& a = nodes[nodeIds[0]];
+  const Node& b = nodes[nodeIds[1]];
+
+  glm::vec3 diff = b.position - a.position;
   float dist = glm::length(diff);
 
   glm::vec3 dir(1.0f, 0.0f, 0.0f);
@@ -13,27 +17,29 @@ void DistanceConstraintProjection::operator()(
   }
 
   float disp = this->targetDistance - dist;
-  float massSum = nodes[0]->mass + nodes[1]->mass;
+  float massSum = a.mass + b.mass;
 
-  projected[0] = nodes[0]->position - disp * dir * nodes[0]->mass / massSum;
-  projected[1] = nodes[1]->position + disp * dir * nodes[1]->mass / massSum;
+  projected[0] = a.position - disp * dir * a.mass / massSum;
+  projected[1] = b.position + disp * dir * b.mass / massSum;
 }
 
-DistanceConstraint createDistanceConstraint(uint32_t id, Node* a, Node* b) {
+DistanceConstraint
+createDistanceConstraint(uint32_t id, const Node& a, const Node& b) {
   return DistanceConstraint(
       id,
       1.0f,
-      {glm::length(b->position - a->position)},
-      {a, b});
+      {glm::length(b.position - a.position)},
+      {a.id, b.id});
 }
 
 void PositionConstraintProjection::operator()(
-    const std::array<Node*, 1>& nodes,
+    const std::vector<Node>& nodes,
+    const std::array<uint32_t, 1>& nodeIds,
     std::array<glm::vec3, 1>& projected) const {
   projected[0] = this->fixedPosition;
 }
 
-PositionConstraint createPositionConstraint(uint32_t id, Node* node) {
-  return PositionConstraint(id, 1.0f, {node->position}, {node});
+PositionConstraint createPositionConstraint(uint32_t id, const Node& node) {
+  return PositionConstraint(id, 1.0f, {node.position}, {node.id});
 }
 } // namespace Pies

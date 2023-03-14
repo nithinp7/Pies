@@ -21,12 +21,12 @@ void Solver::tick(float /*timestep*/) {
     for (uint32_t i = 0; i < this->_options.iterations; ++i) {
       if (!releaseHinge) {
         for (PositionConstraint& constraint : this->_positionConstraints) {
-          constraint.projectNodePositions();
+          constraint.projectNodePositions(this->_nodes);
         }
       }
 
       for (DistanceConstraint& constraint : this->_distanceConstraints) {
-        constraint.projectNodePositions();
+        constraint.projectNodePositions(this->_nodes);
       }
 
       // TODO: Collision solver
