@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.25 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.24 FATAL_ERROR)
 
 project(
     Pies
@@ -32,14 +32,17 @@ if (NOT TARGET glm)
 endif()
 
 add_subdirectory(Extern/tetgen)
+add_subdirectory(Extern/parallel-hashmap)
 
 target_include_directories (Pies
     PUBLIC
       Include
       Extern/glm
-      Extern/tetgen)
+      Extern/tetgen
+      Extern/parallel-hashmap)
 
 target_link_libraries(${PROJECT_NAME} PUBLIC glm)
 target_link_libraries(${PROJECT_NAME} PUBLIC tetgen)
+target_link_libraries(${PROJECT_NAME} PUBLIC phmap)
 
 

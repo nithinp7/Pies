@@ -2,6 +2,7 @@
 
 #include "Constraints.h"
 #include "Node.h"
+#include "SpatialHash.h"
 
 #include <cstdint>
 #include <vector>
@@ -45,8 +46,16 @@ public:
   void createBox(const glm::vec3& translation, float scale, float k);
 
 private:
+  struct NodeCompRange {
+    const SpatialHashGrid& grid;
+
+    SpatialHashGridCellRange operator()(const Node& node) const;
+  };
+
   SolverOptions _options;
   uint32_t _constraintId = 0;
+
+  SpatialHash<Node, NodeCompRange> _spatialHashNodes;
 
   std::vector<Node> _nodes;
   std::vector<PositionConstraint> _positionConstraints;
