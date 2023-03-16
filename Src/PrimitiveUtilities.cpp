@@ -7,7 +7,7 @@ namespace Pies {
 namespace {
 float randf() { return static_cast<float>(double(std::rand()) / RAND_MAX); }
 
-glm::vec3 randColor() { return 255.0f * glm::vec3(randf(), randf(), randf()); }
+glm::vec3 randColor() { return glm::vec3(randf(), randf(), randf()); }
 
 struct GridId {
   uint32_t x;
@@ -259,7 +259,10 @@ void Solver::createTetBox(
   this->renderStateDirty = true;
 }
 
-void Solver::createBox(const glm::vec3& translation, float scale, float stiffness) {
+void Solver::createBox(
+    const glm::vec3& translation,
+    float scale,
+    float stiffness) {
   Grid grid{5, 5, 5};
 
   size_t currentNodeCount = this->_nodes.size();
