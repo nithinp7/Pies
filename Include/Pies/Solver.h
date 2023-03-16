@@ -43,7 +43,8 @@ public:
   const SolverOptions& getOptions() const { return this->_options; }
 
   // Utilities for spawning primitives
-  void createBox(const glm::vec3& translation, float scale, float k);
+  void createBox(const glm::vec3& translation, float scale, float stiffness);
+  void createTetBox(const glm::vec3& translation, float scale, float stiffness);
 
 private:
   struct NodeCompRange {
@@ -60,6 +61,7 @@ private:
   std::vector<Node> _nodes;
   std::vector<PositionConstraint> _positionConstraints;
   std::vector<DistanceConstraint> _distanceConstraints;
+  std::vector<TetrahedralConstraint> _tetConstraints;
 
   // TODO: Seperate into individual buffers for each object??
   std::vector<uint32_t> _triangles;

@@ -37,6 +37,10 @@ void Solver::tick(float /*timestep*/) {
         constraint.projectNodePositions(this->_nodes);
       }
 
+      for (TetrahedralConstraint& constraint : this->_tetConstraints) {
+        constraint.projectNodePositions(this->_nodes);
+      }
+
       // TODO: Collision solver
       this->_spatialHashNodes.clear();
       this->_spatialHashNodes.parallelBulkInsert(this->_nodes);
