@@ -5,6 +5,7 @@ namespace Pies {
 Solver::Solver(const SolverOptions& options) : _options(options) {}
 
 void Solver::tick(float /*timestep*/) {
+
   float deltaTime =
       this->_options.fixedTimestepSize / this->_options.timeSubsteps;
 
@@ -34,9 +35,9 @@ void Solver::tick(float /*timestep*/) {
 
       // Floor constraint
       for (Node& node : this->_nodes) {
-        if (node.position.y < -8.0f) {
-          node.position.y = -8.0f;
-        }
+        if (node.position.y < _floor.y) {
+          node.position.y = _floor.y;
+        
       }
     }
 
@@ -56,4 +57,6 @@ void Solver::tick(float /*timestep*/) {
     }
   }
 }
+}
+
 } // namespace Pies
