@@ -50,7 +50,7 @@ public:
   void createBox(const glm::vec3& translation, float scale, float k);
   void createSheet(const glm::vec3& translation, float scale, float k);
 
-  void createFloor(const glm::vec3& translation, float scale, float k);
+  void createFloor(const glm::vec3& translation, float scale);
 
 private:
   SolverOptions _options;

@@ -392,7 +392,7 @@ void Solver::createSheet(const glm::vec3& translation, float scale, float k) {
   this->renderStateDirty = true;
 }
 
-void Solver::createFloor(const glm::vec3& translation, float scale, float k) {
+void Solver::createFloor(const glm::vec3& translation, float scale) {
   Grid grid {2, 2, 1};
 
   size_t currentNodeCount = this->_nodes.size();
