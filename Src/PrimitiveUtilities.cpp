@@ -65,6 +65,7 @@ void Solver::createTetBox(
         node.position = scale * glm::vec3(i, j, k) + translation;
         node.prevPosition = node.position;
         node.velocity = glm::vec3(0.0f);
+        node.radius = 0.5f * scale;
         node.mass = 1.0f;
 
         // if (i == 0 && j == 0) {
@@ -78,6 +79,9 @@ void Solver::createTetBox(
   // Add tetrahedral constraints in each grid cell
   this->_tetConstraints.reserve(
       currentTetConstraintsCount +
+      6 * (grid.width - 1) * (grid.height - 1) * (grid.depth - 1));
+  this->_tets.reserve(
+      this->_tets.size() +
       6 * (grid.width - 1) * (grid.height - 1) * (grid.depth - 1));
   for (uint32_t i = 0; i < grid.width - 1; ++i) {
     for (uint32_t j = 0; j < grid.height - 1; ++j) {
@@ -95,6 +99,7 @@ void Solver::createTetBox(
         uint32_t node111 =
             grid.gridIdToNodeId(currentNodeCount, {i + 1, j + 1, k + 1});
 
+        // TODO: consolidate tets and tet constraints
         this->_tetConstraints.push_back(createTetrahedralConstraint(
             this->_constraintId++,
             stiffness,
@@ -102,6 +107,11 @@ void Solver::createTetBox(
             this->_nodes[node001],
             this->_nodes[node011],
             this->_nodes[node111]));
+        this->_tets.push_back(
+            {{this->_nodes[node000].id,
+              this->_nodes[node001].id,
+              this->_nodes[node011].id,
+              this->_nodes[node111].id}});
         this->_tetConstraints.push_back(createTetrahedralConstraint(
             this->_constraintId++,
             stiffness,
@@ -109,6 +119,11 @@ void Solver::createTetBox(
             this->_nodes[node010],
             this->_nodes[node011],
             this->_nodes[node111]));
+        this->_tets.push_back(
+            {{this->_nodes[node000].id,
+              this->_nodes[node010].id,
+              this->_nodes[node011].id,
+              this->_nodes[node111].id}});
         this->_tetConstraints.push_back(createTetrahedralConstraint(
             this->_constraintId++,
             stiffness,
@@ -116,6 +131,11 @@ void Solver::createTetBox(
             this->_nodes[node001],
             this->_nodes[node101],
             this->_nodes[node111]));
+        this->_tets.push_back(
+            {{this->_nodes[node000].id,
+              this->_nodes[node001].id,
+              this->_nodes[node101].id,
+              this->_nodes[node111].id}});
         this->_tetConstraints.push_back(createTetrahedralConstraint(
             this->_constraintId++,
             stiffness,
@@ -123,6 +143,11 @@ void Solver::createTetBox(
             this->_nodes[node100],
             this->_nodes[node101],
             this->_nodes[node111]));
+        this->_tets.push_back(
+            {{this->_nodes[node000].id,
+              this->_nodes[node100].id,
+              this->_nodes[node101].id,
+              this->_nodes[node111].id}});
         this->_tetConstraints.push_back(createTetrahedralConstraint(
             this->_constraintId++,
             stiffness,
@@ -130,6 +155,11 @@ void Solver::createTetBox(
             this->_nodes[node010],
             this->_nodes[node110],
             this->_nodes[node111]));
+        this->_tets.push_back({
+            {this->_nodes[node000].id,
+             this->_nodes[node010].id,
+             this->_nodes[node110].id,
+             this->_nodes[node111].id}});
         this->_tetConstraints.push_back(createTetrahedralConstraint(
             this->_constraintId++,
             stiffness,
@@ -137,6 +167,11 @@ void Solver::createTetBox(
             this->_nodes[node100],
             this->_nodes[node110],
             this->_nodes[node111]));
+        this->_tets.push_back(
+            {{this->_nodes[node000].id,
+              this->_nodes[node100].id,
+              this->_nodes[node110].id,
+              this->_nodes[node111].id}});
       }
     }
   }
@@ -251,6 +286,7 @@ void Solver::createTetBox(
   this->_vertices.resize(this->_nodes.size());
   for (size_t i = currentNodeCount; i < this->_nodes.size(); ++i) {
     this->_vertices[i].position = this->_nodes[i].position;
+    this->_vertices[i].radius = this->_nodes[i].radius;
     this->_vertices[i].baseColor = boxColor;
     this->_vertices[i].roughness = boxRoughness;
     this->_vertices[i].metallic = boxMetallic;
@@ -287,6 +323,7 @@ void Solver::createBox(
         node.position = scale * glm::vec3(i, j, k) + translation;
         node.prevPosition = node.position;
         node.velocity = glm::vec3(0.0f);
+        node.radius = 0.5f * scale;
         node.mass = 1.0f;
 
         // if (i == 0 && j == 0) {
@@ -491,6 +528,7 @@ void Solver::createBox(
   this->_vertices.resize(this->_nodes.size());
   for (size_t i = currentNodeCount; i < this->_nodes.size(); ++i) {
     this->_vertices[i].position = this->_nodes[i].position;
+    this->_vertices[i].radius = this->_nodes[i].radius;
     this->_vertices[i].baseColor = boxColor;
     this->_vertices[i].roughness = boxRoughness;
     this->_vertices[i].metallic = boxMetallic;

@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -67,22 +68,25 @@ public:
 
   const glm::mat4& worldToLocal() const { return this->_invGridTransform; }
 
-  void parallelBulkInsert(std::vector<TValue>& values) {
-    TCompRange compRangeFn{this->_grid};
-
+  void parallelBulkInsert(
+      std::vector<TValue>& values,
+      const TCompRange& compRangeFn) {
     // NOTE: Based on example given in:
     // https://greg7mdp.github.io/parallel-hashmap/
     constexpr size_t numThreads = 8; // has to be a power of two
     std::unique_ptr<std::thread> threads[numThreads];
-    auto threadFn = [&hash = this->_hashMap, &values, &compRangeFn, numThreads](
-                        size_t thread_idx) {
+    auto threadFn = [&grid = this->_grid,
+                     &hash = this->_hashMap,
+                     &values,
+                     &compRangeFn,
+                     numThreads](size_t thread_idx) {
       size_t modulo =
           hash.subcnt() / numThreads; // subcnt() returns the number of submaps
 
       for (size_t i = 0; i < values.size(); ++i) {
         TValue& value = values[i];
         // const GridCellRange& range = gridCellRanges[i];
-        SpatialHashGridCellRange range = compRangeFn(value);
+        SpatialHashGridCellRange range = compRangeFn(value, grid);
 
         for (uint32_t dx = 0; dx < range.lengthX; ++dx) {
           for (uint32_t dy = 0; dy < range.lengthY; ++dy) {

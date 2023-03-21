@@ -3,6 +3,7 @@
 #include "Constraints.h"
 #include "Node.h"
 #include "SpatialHash.h"
+#include "Tetrahedron.h"
 
 #include <cstdint>
 #include <vector>
@@ -21,6 +22,8 @@ class Solver {
 public:
   struct Vertex {
     glm::vec3 position{};
+    float radius{};
+    
     glm::vec3 baseColor{};
     float roughness{};
     float metallic{};
@@ -48,17 +51,25 @@ public:
 
 private:
   struct NodeCompRange {
-    const SpatialHashGrid& grid;
+    SpatialHashGridCellRange
+    operator()(const Node& node, const SpatialHashGrid& grid) const;
+  };
 
-    SpatialHashGridCellRange operator()(const Node& node) const;
+  struct TetCompRange {
+    const std::vector<Node>& nodes;
+
+    SpatialHashGridCellRange
+    operator()(const Tetrahedron& node, const SpatialHashGrid& grid) const;
   };
 
   SolverOptions _options;
   uint32_t _constraintId = 0;
 
   SpatialHash<Node, NodeCompRange> _spatialHashNodes;
+  SpatialHash<Tetrahedron, TetCompRange> _spatialHashTets;
 
   std::vector<Node> _nodes;
+  std::vector<Tetrahedron> _tets;
   std::vector<PositionConstraint> _positionConstraints;
   std::vector<DistanceConstraint> _distanceConstraints;
   std::vector<TetrahedralConstraint> _tetConstraints;
