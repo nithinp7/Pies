@@ -40,8 +40,9 @@ struct Grid {
 void Solver::createTetBox(
     const glm::vec3& translation,
     float scale,
+    const glm::vec3& initialVelocity,
     float stiffness) {
-  Grid grid{5, 5, 5};
+  Grid grid{3, 3, 3};
 
   size_t currentNodeCount = this->_nodes.size();
   size_t currentTetConstraintsCount = this->_tetConstraints.size();
@@ -64,7 +65,7 @@ void Solver::createTetBox(
         node.id = nodeId;
         node.position = scale * glm::vec3(i, j, k) + translation;
         node.prevPosition = node.position;
-        node.velocity = glm::vec3(0.0f);
+        node.velocity = initialVelocity;
         node.radius = 0.5f * scale;
         node.mass = 1.0f;
 
@@ -155,11 +156,11 @@ void Solver::createTetBox(
             this->_nodes[node010],
             this->_nodes[node110],
             this->_nodes[node111]));
-        this->_tets.push_back({
-            {this->_nodes[node000].id,
-             this->_nodes[node010].id,
-             this->_nodes[node110].id,
-             this->_nodes[node111].id}});
+        this->_tets.push_back(
+            {{this->_nodes[node000].id,
+              this->_nodes[node010].id,
+              this->_nodes[node110].id,
+              this->_nodes[node111].id}});
         this->_tetConstraints.push_back(createTetrahedralConstraint(
             this->_constraintId++,
             stiffness,

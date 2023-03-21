@@ -55,18 +55,47 @@ struct SpatialHashGridCellRange {
  * grid space and world space are provided.
  */
 struct SpatialHashGrid {
-  glm::mat4 gridToWorld;
-  glm::mat4 worldToGrid;
+  glm::vec3 translation;
+  float scale;
 };
 
 template <typename TValue, typename TCompRange> class SpatialHash {
 public:
-  SpatialHash(const glm::mat4& transform = glm::mat4(1.0f))
-      : _grid({transform, glm::affineInverse(transform)}) {}
+  SpatialHash(
+      const glm::vec3& translation = glm::vec3(0.0f),
+      float scale = 1.0f)
+      : _grid({translation, scale}) {}
 
-  const glm::mat4& localToWorld() const { return this->_gridTransform; }
+  const SpatialHashGrid& getGrid() const {
+    return this->_grid;
+  }
 
-  const glm::mat4& worldToLocal() const { return this->_invGridTransform; }
+  void findCollisions(
+      const TValue& value, 
+      const TCompRange& compRangeFn,
+      std::vector<SpatialHashGridCellBucket<TValue>*>& collidingBuckets) {
+    SpatialHashGridCellRange range = compRangeFn(value, this->_grid);
+
+    for (uint32_t dx = 0; dx < range.lengthX; ++dx) {
+      for (uint32_t dy = 0; dy < range.lengthY; ++dy) {
+        for (uint32_t dz = 0; dz < range.lengthZ; ++dz) {
+          // Compute grid cell id
+          SpatialHashGridCellId id{
+              range.minX + dx,
+              range.minY + dy,
+              range.minZ + dz};
+          // Compute its hash
+          size_t hashVal = this->_hashMap.hash(id);
+          
+          auto it = this->_hashMap.find(id, hashVal);
+          if (it != this->_hashMap.end()) {
+            // Colliding cell has non-empty bucket
+            collidingBuckets.push_back(&it->second);
+          }
+        }
+      }
+    }
+  }
 
   void parallelBulkInsert(
       std::vector<TValue>& values,

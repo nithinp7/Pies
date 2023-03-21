@@ -16,6 +16,7 @@ struct SolverOptions {
   float gravity = 10.0f;
   float damping = 0.001f;
   float friction = 0.1f;
+  float floorHeight = 0.0f;
 };
 
 class Solver {
@@ -23,7 +24,7 @@ public:
   struct Vertex {
     glm::vec3 position{};
     float radius{};
-    
+
     glm::vec3 baseColor{};
     float roughness{};
     float metallic{};
@@ -47,7 +48,11 @@ public:
 
   // Utilities for spawning primitives
   void createBox(const glm::vec3& translation, float scale, float stiffness);
-  void createTetBox(const glm::vec3& translation, float scale, float stiffness);
+  void createTetBox(
+      const glm::vec3& translation,
+      float scale,
+      const glm::vec3& initialVelocity,
+      float stiffness);
 
 private:
   struct NodeCompRange {
