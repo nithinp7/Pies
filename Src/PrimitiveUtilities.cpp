@@ -392,48 +392,4 @@ void Solver::createSheet(const glm::vec3& translation, float scale, float k) {
   this->renderStateDirty = true;
 }
 
-void Solver::createFloor(const glm::vec3& translation, float scale) {
-  Grid grid {2, 2, 1};
-
-  size_t currentNodeCount = this->_nodes.size();
-  size_t currentTriCount = this->_triangles.size();
-  size_t currentVertexCount = this->_vertices.size();
-
-  glm::vec3 floorColor = randColor();
-  float floorRoughness = randf();
-  float floorMetallic = static_cast<float>(std::rand() % 2);
-
-  scale = _floor.length;
-
-  //Triangles
-  this->_triangles.reserve(
-      currentTriCount + 6);
-  this->_triangles.push_back(
-      grid.gridIdToNodeId(currentTriCount, {0, 0, 0}));
-  this->_triangles.push_back(
-      grid.gridIdToNodeId(currentTriCount, {1, 0, 0}));
-  this->_triangles.push_back(
-      grid.gridIdToNodeId(currentTriCount, {1, 1, 0}));
-
-  this->_triangles.push_back(
-      grid.gridIdToNodeId(currentTriCount, {0, 0, 0}));
-  this->_triangles.push_back(
-      grid.gridIdToNodeId(currentTriCount, {1, 1, 0}));
-  this->_triangles.push_back(
-      grid.gridIdToNodeId(currentTriCount, {0, 1, 0}));
-
-  //Vertices
-  this->_vertices.reserve(
-      currentNodeCount + grid.width * grid.height);
-
-  for (size_t i = currentVertexCount; i < this->_vertices.size(); ++i) {
-    this->_vertices[i].position = scale * glm::vec3(i / 2, i % 2, 0) + translation;
-    this->_vertices[i].baseColor = floorColor;
-    this->_vertices[i].roughness = floorRoughness;
-    this->_vertices[i].metallic = floorMetallic;
-  }
-
-  this->renderStateDirty = true;
-}
-
 } // namespace Pies

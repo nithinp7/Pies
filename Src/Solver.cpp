@@ -35,8 +35,8 @@ void Solver::tick(float /*timestep*/) {
 
       // Floor constraint
       for (Node& node : this->_nodes) {
-        if (node.position.y < _floor.y) {
-          node.position.y = _floor.y;
+        if (node.position.y < -8.0f) {
+          node.position.y = -8.0f;
         
       }
     }

@@ -16,11 +16,6 @@ struct SolverOptions {
   float friction = 0.1f;
 };
 
-struct Floor {
-  float y;
-  float length;
-};
-
 class Solver {
 public:
   struct Vertex {
@@ -50,11 +45,8 @@ public:
   void createBox(const glm::vec3& translation, float scale, float k);
   void createSheet(const glm::vec3& translation, float scale, float k);
 
-  void createFloor(const glm::vec3& translation, float scale);
-
 private:
   SolverOptions _options;
-  Floor _floor = {-8.0f, 100.0f};
   uint32_t _constraintId = 0;
 
   std::vector<Node> _nodes;
