@@ -37,7 +37,7 @@ void Solver::tick(float /*timestep*/) {
       for (Node& node : this->_nodes) {
         if (node.position.y < -8.0f) {
           node.position.y = -8.0f;
-        
+        }
       }
     }
 
@@ -56,7 +56,6 @@ void Solver::tick(float /*timestep*/) {
       this->_vertices[i].position = this->_nodes[i].position;
     }
   }
-}
 }
 
 } // namespace Pies
