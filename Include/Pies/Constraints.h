@@ -125,6 +125,39 @@ struct PositionConstraintProjection {
 typedef Constraint<1, PositionConstraintProjection> PositionConstraint;
 PositionConstraint createPositionConstraint(uint32_t id, const Node& node);
 
+struct TetrahedralConstraintProjection {
+  glm::mat3 Qinv;
+
+  void operator()(
+      const std::vector<Node>& nodes,
+      const std::array<uint32_t, 4>& nodeIds,
+      std::array<glm::vec3, 4>& projected) const;
+};
+typedef Constraint<4, TetrahedralConstraintProjection> TetrahedralConstraint;
+TetrahedralConstraint createTetrahedralConstraint(
+    uint32_t id,
+    float k,
+    const Node& a,
+    const Node& b,
+    const Node& c,
+    const Node& d);
+
+struct VolumeConstraintProjection {
+  float targetVolume;
+
+  void operator()(
+      const std::vector<Node>& nodes,
+      const std::array<uint32_t, 4>& nodeIds,
+      std::array<glm::vec3, 4>& projected) const;
+};
+typedef Constraint<4, VolumeConstraintProjection> VolumeConstraint;
+VolumeConstraint createVolumeConstraint(
+    uint32_t id,
+    float k,
+    const Node& a,
+    const Node& b,
+    const Node& c,
+    const Node& d);
 // struct CollisionConstraintProjection {
 //   glm::vec3 intersection;
 //   glm::vec3 normal;
