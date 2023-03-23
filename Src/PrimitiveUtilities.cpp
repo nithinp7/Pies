@@ -562,6 +562,7 @@ void Solver::createSheet(const glm::vec3& translation, float scale, float k) {
         node.position = scale * glm::vec3(i, j, j) + translation;
         node.prevPosition = node.position;
         node.velocity = glm::vec3(0.0f);
+        node.radius = 0.5f * scale;
         node.mass = 1.0f;
 
         // if (i == 0 && j == 0) {
