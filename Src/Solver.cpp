@@ -76,6 +76,14 @@ void Solver::tick(float /*timestep*/) {
 
             node.position += 0.85f * -disp * dir * node.mass / massSum;
             pOtherNode->position += 0.85f * disp * dir * pOtherNode->mass / massSum;
+
+            // TODO: Add friction between dynamic objects
+            glm::vec3 relativeVelocity = pOtherNode->velocity - node.velocity;
+            glm::vec3 perpVel = relativeVelocity - glm::dot(relativeVelocity, dir) * dir;
+
+            // TODO: Decouple friction from solver iteration count
+            node.velocity += -this->_options.friction * perpVel * node.mass / massSum;
+            pOtherNode->velocity += this->_options.friction * perpVel * pOtherNode->mass / massSum;
           }
         }
 
@@ -106,6 +114,20 @@ void Solver::tick(float /*timestep*/) {
       this->_vertices[i].position = this->_nodes[i].position;
     }
   }
+}
+
+void Solver::clear() {
+  this->_lines.clear();
+  this->_triangles.clear();
+  this->_nodes.clear();
+  this->_distanceConstraints.clear();
+  this->_tetConstraints.clear();
+  this->_tets.clear();
+  this->_positionConstraints.clear();
+  this->_vertices.clear();
+  this->_constraintId = 0;
+
+  this->renderStateDirty = true;
 }
 
 SpatialHashGridCellRange Solver::NodeCompRange::operator()(

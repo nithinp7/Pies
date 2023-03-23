@@ -46,6 +46,8 @@ public:
 
   const SolverOptions& getOptions() const { return this->_options; }
 
+  void clear();
+  
   // Utilities for spawning primitives
   void createBox(const glm::vec3& translation, float scale, float stiffness);
   void createTetBox(
