@@ -43,6 +43,7 @@ public:
 
   // Utilities for spawning primitives
   void createBox(const glm::vec3& translation, float scale, float k);
+  void createSheet(const glm::vec3& translation, float scale, float k);
 
 private:
   SolverOptions _options;

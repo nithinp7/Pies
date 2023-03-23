@@ -5,6 +5,7 @@ namespace Pies {
 Solver::Solver(const SolverOptions& options) : _options(options) {}
 
 void Solver::tick(float /*timestep*/) {
+
   float deltaTime =
       this->_options.fixedTimestepSize / this->_options.timeSubsteps;
 
@@ -56,4 +57,5 @@ void Solver::tick(float /*timestep*/) {
     }
   }
 }
+
 } // namespace Pies
