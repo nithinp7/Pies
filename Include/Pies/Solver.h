@@ -53,6 +53,7 @@ public:
       float scale,
       const glm::vec3& initialVelocity,
       float stiffness);
+  void createSheet(const glm::vec3& translation, float scale, float k);
 
 private:
   struct NodeCompRange {

@@ -537,4 +537,123 @@ void Solver::createBox(
 
   this->renderStateDirty = true;
 }
+
+void Solver::createSheet(const glm::vec3& translation, float scale, float k) {
+  Grid grid{10, 10, 1};
+
+  size_t currentNodeCount = this->_nodes.size();
+  size_t currentDistConstraintsCount = this->_distanceConstraints.size();
+  size_t currentLinesCount = this->_lines.size();
+  size_t currentTriCount = this->_triangles.size();
+
+  glm::vec3 boxColor = randColor();
+  float boxRoughness = randf();
+  float boxMetallic = static_cast<float>(std::rand() % 2);
+
+  // Add nodes in a grid
+  this->_nodes.reserve(
+      currentNodeCount + grid.width * grid.height);
+  for (uint32_t i = 0; i < grid.width; ++i) {
+    for (uint32_t j = 0; j < grid.height; ++j) {
+        uint32_t nodeId = grid.gridIdToNodeId(currentNodeCount, {i, j, 0});
+
+        Node& node = this->_nodes.emplace_back();
+        node.id = nodeId;
+        node.position = scale * glm::vec3(i, j, j) + translation;
+        node.prevPosition = node.position;
+        node.velocity = glm::vec3(0.0f);
+        node.mass = 1.0f;
+
+        // if (i == 0 && j == 0) {
+        //   this->_positionConstraints.push_back(
+        //       createPositionConstraint(this->_constraintId++, &node));
+        // }
+    }
+  }
+
+  // Add distance constraints in each grid cell
+  this->_distanceConstraints.reserve(
+      currentDistConstraintsCount +
+      8 * (grid.width - 1) * (grid.height - 1));
+  for (uint32_t i = 0; i < grid.width; ++i) {
+    for (uint32_t j = 0; j < grid.height; ++j) {
+        uint32_t node00 = grid.gridIdToNodeId(currentNodeCount, {i, j, 0});
+        uint32_t node01 = grid.gridIdToNodeId(currentNodeCount, {i, j + 1, 0});
+        uint32_t node10 = grid.gridIdToNodeId(currentNodeCount, {i + 1, j, 0});
+        uint32_t node11 = grid.gridIdToNodeId(currentNodeCount, {i + 1, j + 1, 0});
+
+        // Grid-aligned constraints
+        if (i < (grid.width - 1)) {
+            this->_distanceConstraints.push_back(createDistanceConstraint(
+                this->_constraintId++,
+                this->_nodes[node00],
+                this->_nodes[node10]));
+        }
+
+        if (j < (grid.height - 1)) {
+            this->_distanceConstraints.push_back(createDistanceConstraint(
+                this->_constraintId++,
+                this->_nodes[node00],
+                this->_nodes[node01]));
+        }
+
+        // Long diagonal constraints
+        if (i < (grid.width - 1) && j < (grid.height - 1)) {
+            this->_distanceConstraints.push_back(createDistanceConstraint(
+                this->_constraintId++,
+                this->_nodes[node00],
+                this->_nodes[node11]));
+        }
+    }
+  }
+
+  this->_triangles.reserve(
+      currentTriCount + (2 * grid.width * grid.height));
+  for (uint32_t i = 0; i < grid.width - 1; ++i) {
+    for (uint32_t j = 0; j < grid.height - 1; ++j) {
+      this->_triangles.push_back(
+          grid.gridIdToNodeId(currentNodeCount, {i, j, 0}));
+      this->_triangles.push_back(
+          grid.gridIdToNodeId(currentNodeCount, {i + 1, j, 0}));
+      this->_triangles.push_back(
+          grid.gridIdToNodeId(currentNodeCount, {i + 1, j + 1, 0}));
+
+      this->_triangles.push_back(
+          grid.gridIdToNodeId(currentNodeCount, {i, j, 0}));
+      this->_triangles.push_back(
+          grid.gridIdToNodeId(currentNodeCount, {i + 1, j + 1, 0}));
+      this->_triangles.push_back(
+          grid.gridIdToNodeId(currentNodeCount, {i, j + 1, 0}));
+    }
+  }
+
+  for (size_t i = currentDistConstraintsCount;
+       i < this->_distanceConstraints.size();
+       ++i) {
+    this->_distanceConstraints[i].setWeight(
+        1.0f - powf(1.0f - k, 1.0f / this->_options.iterations));
+  }
+
+  this->_lines.reserve(
+      currentLinesCount +
+      2 * (this->_distanceConstraints.size() - currentDistConstraintsCount));
+  for (size_t i = currentDistConstraintsCount;
+       i < this->_distanceConstraints.size();
+       ++i) {
+    const DistanceConstraint& constraint = this->_distanceConstraints[i];
+    this->_lines.push_back(constraint.getNodeId(0));
+    this->_lines.push_back(constraint.getNodeId(1));
+  }
+
+  this->_vertices.resize(this->_nodes.size());
+  for (size_t i = currentNodeCount; i < this->_nodes.size(); ++i) {
+    this->_vertices[i].position = this->_nodes[i].position;
+    this->_vertices[i].baseColor = boxColor;
+    this->_vertices[i].roughness = boxRoughness;
+    this->_vertices[i].metallic = boxMetallic;
+  }
+
+  this->renderStateDirty = true;
+}
+
 } // namespace Pies
