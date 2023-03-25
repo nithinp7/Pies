@@ -10,7 +10,6 @@ Solver::Solver(const SolverOptions& options)
       _spatialHashTets(glm::vec3(0.0f), 0.5f) {}
 
 void Solver::tick(float /*timestep*/) {
-
   float deltaTime =
       this->_options.fixedTimestepSize / this->_options.timeSubsteps;
 

@@ -649,6 +649,7 @@ void Solver::createSheet(const glm::vec3& translation, float scale, float k) {
   this->_vertices.resize(this->_nodes.size());
   for (size_t i = currentNodeCount; i < this->_nodes.size(); ++i) {
     this->_vertices[i].position = this->_nodes[i].position;
+    this->_vertices[i].radius = this->_nodes[i].radius;
     this->_vertices[i].baseColor = boxColor;
     this->_vertices[i].roughness = boxRoughness;
     this->_vertices[i].metallic = boxMetallic;
