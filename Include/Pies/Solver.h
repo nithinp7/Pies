@@ -5,10 +5,17 @@
 #include "SpatialHash.h"
 #include "Tetrahedron.h"
 
+#include <Eigen/Core>
+
 #include <cstdint>
 #include <vector>
 
 namespace Pies {
+enum class SolverName {
+  PBD,
+  PD
+};
+
 struct SolverOptions {
   uint32_t iterations = 4;
   uint32_t timeSubsteps = 10;
@@ -18,6 +25,7 @@ struct SolverOptions {
   float friction = 0.25f;
   float floorHeight = 0.0f;
   float gridSpacing = 1.0f;
+  SolverName solver = SolverName::PD;
 };
 
 class Solver {
@@ -82,6 +90,9 @@ private:
   std::vector<PositionConstraint> _positionConstraints;
   std::vector<DistanceConstraint> _distanceConstraints;
   std::vector<TetrahedralConstraint> _tetConstraints;
+
+  Eigen::MatrixXf _stateVector;
+  Eigen::MatrixXf _stiffnessMatrix;
 
   // TODO: Seperate into individual buffers for each object??
   std::vector<uint32_t> _triangles;
