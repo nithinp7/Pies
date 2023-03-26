@@ -6,8 +6,8 @@ namespace Pies {
 
 Solver::Solver(const SolverOptions& options)
     : _options(options),
-      _spatialHashNodes(glm::vec3(0.0f), 0.5f),
-      _spatialHashTets(glm::vec3(0.0f), 0.5f) {}
+      _spatialHashNodes(glm::vec3(0.0f), options.gridSpacing),
+      _spatialHashTets(glm::vec3(0.0f), options.gridSpacing) {}
 
 void Solver::tick(float /*timestep*/) {
   float deltaTime =
@@ -80,9 +80,14 @@ void Solver::tick(float /*timestep*/) {
             glm::vec3 relativeVelocity = pOtherNode->velocity - node.velocity;
             glm::vec3 perpVel = relativeVelocity - glm::dot(relativeVelocity, dir) * dir;
 
+            float friction = this->_options.friction;
+            if (glm::length(perpVel) < 5.0f) {
+              friction = 1.0f;
+            }
+
             // TODO: Decouple friction from solver iteration count
-            node.velocity += -this->_options.friction * perpVel * node.mass / massSum;
-            pOtherNode->velocity += this->_options.friction * perpVel * pOtherNode->mass / massSum;
+            node.velocity += -friction * perpVel * node.mass / massSum;
+            pOtherNode->velocity += friction * perpVel * pOtherNode->mass / massSum;
           }
         }
 
@@ -106,8 +111,13 @@ void Solver::tick(float /*timestep*/) {
 
       // TODO: friction for dynamically generated constraints
       if (node.position.y - node.radius <= this->_options.floorHeight) {
-        node.velocity.x *= 1.0f - this->_options.friction;
-        node.velocity.z *= 1.0f - this->_options.friction;
+        if (glm::length(glm::vec2(node.velocity.x, node.velocity.z)) < 5.0f) {
+          node.velocity.x = 0.0f;
+          node.velocity.z = 0.0f;
+        } else {
+          node.velocity.x *= 1.0f - this->_options.friction;
+          node.velocity.z *= 1.0f - this->_options.friction;
+        }
       }
 
       this->_vertices[i].position = this->_nodes[i].position;

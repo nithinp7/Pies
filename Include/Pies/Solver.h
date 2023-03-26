@@ -15,8 +15,9 @@ struct SolverOptions {
   float fixedTimestepSize = 0.05f;
   float gravity = 10.0f;
   float damping = 0.001f;
-  float friction = 0.1f;
+  float friction = 0.25f;
   float floorHeight = 0.0f;
+  float gridSpacing = 1.0f;
 };
 
 class Solver {
