@@ -539,7 +539,7 @@ void Solver::createBox(
 }
 
 void Solver::createSheet(const glm::vec3& translation, float scale, float k) {
-  Grid grid{10, 10, 1};
+  Grid grid{20, 20, 1};
 
   size_t currentNodeCount = this->_nodes.size();
   size_t currentDistConstraintsCount = this->_distanceConstraints.size();
@@ -559,16 +559,16 @@ void Solver::createSheet(const glm::vec3& translation, float scale, float k) {
 
         Node& node = this->_nodes.emplace_back();
         node.id = nodeId;
-        node.position = scale * glm::vec3(i, j, j) + translation;
+        node.position = scale * glm::vec3(i, 0, j) + translation;
         node.prevPosition = node.position;
         node.velocity = glm::vec3(0.0f);
         node.radius = 0.5f * scale;
         node.mass = 1.0f;
 
-        // if (i == 0 && j == 0) {
-        //   this->_positionConstraints.push_back(
-        //       createPositionConstraint(this->_constraintId++, &node));
-        // }
+        if (i == 0) {
+          this->_positionConstraints.push_back(
+              createPositionConstraint(this->_constraintId++, node));
+        }
     }
   }
 
