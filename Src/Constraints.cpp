@@ -28,10 +28,12 @@ void DistanceConstraintProjection::operator()(
 }
 
 DistanceConstraint
-createDistanceConstraint(uint32_t id, const Node& a, const Node& b) {
+createDistanceConstraint(uint32_t id, const Node& a, const Node& b, float w) {
   return DistanceConstraint(
       id,
-      1.0f,
+      w,
+      Eigen::Matrix2f::Identity(),
+      Eigen::Matrix2f::Identity(),
       {glm::length(b.position - a.position)},
       {a.id, b.id});
 }
@@ -43,8 +45,14 @@ void PositionConstraintProjection::operator()(
   projected[0] = this->fixedPosition;
 }
 
-PositionConstraint createPositionConstraint(uint32_t id, const Node& node) {
-  return PositionConstraint(id, 1.0f, {node.position}, {node.id});
+PositionConstraint createPositionConstraint(uint32_t id, const Node& node, float w) {
+  return PositionConstraint(
+      id, 
+      w, 
+      Eigen::Matrix<float, 1, 1>::Identity(),
+      Eigen::Matrix<float, 1, 1>::Identity(),
+      {node.position}, 
+      {node.id});
 }
 
 void TetrahedralConstraintProjection::operator()(
@@ -118,6 +126,8 @@ TetrahedralConstraint createTetrahedralConstraint(
   return TetrahedralConstraint(
       id,
       k,
+      Eigen::Matrix4f::Identity(),
+      Eigen::Matrix4f::Identity(),
       {glm::inverse(Q)},
       {x1.id, x2.id, x3.id, x4.id});
 }
@@ -166,6 +176,12 @@ VolumeConstraint createVolumeConstraint(
   glm::vec3 x41 = x4.position - x1.position;
 
   float targetVolume = glm::dot(glm::cross(x21, x31), x41) / 6.0f;
-  return VolumeConstraint(id, k, {targetVolume}, {x1.id, x2.id, x3.id, x4.id});
+  return VolumeConstraint(
+      id, 
+      k, 
+      Eigen::Matrix4f::Identity(),
+      Eigen::Matrix4f::Identity(),
+      {targetVolume}, 
+      {x1.id, x2.id, x3.id, x4.id});
 }
 } // namespace Pies

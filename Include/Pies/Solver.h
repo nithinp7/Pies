@@ -6,20 +6,20 @@
 #include "Tetrahedron.h"
 
 #include <Eigen/Core>
+#include <Eigen/SparseCholesky>
+#include <Eigen/SparseCore>
 
 #include <cstdint>
 #include <vector>
+#include <memory>
 
 namespace Pies {
-enum class SolverName {
-  PBD,
-  PD
-};
+enum class SolverName { PBD, PD };
 
 struct SolverOptions {
   uint32_t iterations = 4;
-  uint32_t timeSubsteps = 10;
-  float fixedTimestepSize = 0.05f;
+  uint32_t timeSubsteps = 1;
+  float fixedTimestepSize = 0.033f;
   float gravity = 10.0f;
   float damping = 0.0005f;
   float friction = 0.25f;
@@ -46,6 +46,8 @@ public:
   Solver(const SolverOptions& options);
 
   void tick(float deltaTime);
+  void tickPBD(float deltaTime);
+  void tickPD(float deltaTime);
 
   const std::vector<Vertex>& getVertices() const { return this->_vertices; }
 
@@ -56,7 +58,7 @@ public:
   const SolverOptions& getOptions() const { return this->_options; }
 
   void clear();
-  
+
   // Utilities for spawning primitives
   void createBox(const glm::vec3& translation, float scale, float stiffness);
   void createTetBox(
@@ -91,8 +93,14 @@ private:
   std::vector<DistanceConstraint> _distanceConstraints;
   std::vector<TetrahedralConstraint> _tetConstraints;
 
+  uint32_t _previousNodeCount = 0;
   Eigen::MatrixXf _stateVector;
-  Eigen::MatrixXf _stiffnessMatrix;
+  Eigen::MatrixXf _forceVector;
+  Eigen::MatrixXf _Msn_h2;
+  Eigen::SparseMatrix<float> _stiffnessMatrix;
+  // This isn't movable, so we keep it on the heap
+  std::unique_ptr<Eigen::SimplicialLLT<Eigen::SparseMatrix<float>>>
+      _pLltDecomp;
 
   // TODO: Seperate into individual buffers for each object??
   std::vector<uint32_t> _triangles;

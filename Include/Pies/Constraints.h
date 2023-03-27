@@ -63,13 +63,10 @@ public:
    */
   void
   setupGlobalStiffnessMatrix(Eigen::SparseMatrix<float>& systemMatrix) const {
-    // TODO: Reserve guess for non-zero entries before hand
-    // Sequential insert might be very slow
-    // Might be better to insert into dense matrix and then squeeze
-    // to sparse?
+    // Note: We only fill in the lower triangular part of the matrix.
     for (uint32_t i = 0; i < NodeCount; ++i) {
       uint32_t nodeId_i = this->_nodeIds[i];
-      for (uint32_t j = 0; j < NodeCount; ++j) {
+      for (uint32_t j = 0; j <= i; ++j) {
         uint32_t nodeId_j = this->_nodeIds[j];
         systemMatrix.coeffRef(nodeId_i, nodeId_j) +=
             this->_w * this->_AtA.coeff(i, j);
@@ -92,10 +89,12 @@ public:
       p.coeffRef(i, 2) = this->_projectedConfig[i].z;
     }
 
-    Eigen::Matrix<float, NodeCount, 3> AtB
+    Eigen::Matrix<float, NodeCount, 3> AtBp = this->_AtB * p;
     for (uint32_t i = 0; i < NodeCount; ++i) {
       uint32_t nodeId_i = this->_nodeIds[i];
-      forceVector.coeffRef(nodeId_i, 0) += this->_w * this->_AtB.coeff(i, i);
+      forceVector.coeffRef(nodeId_i, 0) += this->_w * AtBp.coeff(i, 0);
+      forceVector.coeffRef(nodeId_i, 1) += this->_w * AtBp.coeff(i, 1);
+      forceVector.coeffRef(nodeId_i, 2) += this->_w * AtBp.coeff(i, 2);
     }
   }
 
@@ -145,7 +144,7 @@ struct DistanceConstraintProjection {
 };
 typedef Constraint<2, DistanceConstraintProjection> DistanceConstraint;
 DistanceConstraint
-createDistanceConstraint(uint32_t id, const Node& a, const Node& b);
+createDistanceConstraint(uint32_t id, const Node& a, const Node& b, float w);
 
 struct PositionConstraintProjection {
   glm::vec3 fixedPosition;
@@ -156,7 +155,7 @@ struct PositionConstraintProjection {
       std::array<glm::vec3, 1>& projected) const;
 };
 typedef Constraint<1, PositionConstraintProjection> PositionConstraint;
-PositionConstraint createPositionConstraint(uint32_t id, const Node& node);
+PositionConstraint createPositionConstraint(uint32_t id, const Node& node, float w);
 
 struct TetrahedralConstraintProjection {
   glm::mat3 Qinv;

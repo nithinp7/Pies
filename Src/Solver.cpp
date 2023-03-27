@@ -9,7 +9,18 @@ Solver::Solver(const SolverOptions& options)
       _spatialHashNodes(glm::vec3(0.0f), options.gridSpacing),
       _spatialHashTets(glm::vec3(0.0f), options.gridSpacing) {}
 
-void Solver::tick(float /*timestep*/) {
+void Solver::tick(float timestep) {
+  switch (this->_options.solver) {
+  case SolverName::PBD:
+    this->tickPBD(timestep);
+    break;
+  case SolverName::PD:
+    this->tickPD(timestep);
+    break;
+  };
+}
+
+void Solver::tickPBD(float /*timestep*/) {
   float deltaTime =
       this->_options.fixedTimestepSize / this->_options.timeSubsteps;
 
@@ -74,11 +85,13 @@ void Solver::tick(float /*timestep*/) {
             float massSum = node.mass + pOtherNode->mass;
 
             node.position += 0.85f * -disp * dir * node.mass / massSum;
-            pOtherNode->position += 0.85f * disp * dir * pOtherNode->mass / massSum;
+            pOtherNode->position +=
+                0.85f * disp * dir * pOtherNode->mass / massSum;
 
             // TODO: Add friction between dynamic objects
             glm::vec3 relativeVelocity = pOtherNode->velocity - node.velocity;
-            glm::vec3 perpVel = relativeVelocity - glm::dot(relativeVelocity, dir) * dir;
+            glm::vec3 perpVel =
+                relativeVelocity - glm::dot(relativeVelocity, dir) * dir;
 
             float friction = this->_options.friction;
             if (glm::length(perpVel) < 5.0f) {
@@ -87,7 +100,8 @@ void Solver::tick(float /*timestep*/) {
 
             // TODO: Decouple friction from solver iteration count
             node.velocity += -friction * perpVel * node.mass / massSum;
-            pOtherNode->velocity += friction * perpVel * pOtherNode->mass / massSum;
+            pOtherNode->velocity +=
+                friction * perpVel * pOtherNode->mass / massSum;
           }
         }
 
@@ -105,9 +119,8 @@ void Solver::tick(float /*timestep*/) {
     for (uint32_t i = 0; i < this->_nodes.size(); ++i) {
       Node& node = this->_nodes[i];
 
-      node.velocity =
-          (1.0f - this->_options.damping) *
-          (node.position - node.prevPosition) / deltaTime;
+      node.velocity = (1.0f - this->_options.damping) *
+                      (node.position - node.prevPosition) / deltaTime;
 
       // TODO: friction for dynamically generated constraints
       if (node.position.y - node.radius <= this->_options.floorHeight) {
@@ -125,6 +138,117 @@ void Solver::tick(float /*timestep*/) {
   }
 }
 
+void Solver::tickPD(float /*timestep*/) {
+  uint32_t nodeCount = static_cast<uint32_t>(this->_nodes.size());
+
+  // TODO: Remove time substeps for PD solver
+  float h = this->_options.fixedTimestepSize / this->_options.timeSubsteps;
+  float h2 = h * h;
+
+  if (this->_previousNodeCount != nodeCount) {
+    this->_previousNodeCount = nodeCount;
+
+    // TODO: Make smart factorization updates instead of re-running the
+    // precomputation
+    // Construct stiffness matrix
+    this->_stiffnessMatrix = Eigen::SparseMatrix<float>(nodeCount, nodeCount);
+
+    for (uint32_t i = 0; i < nodeCount; ++i) {
+      this->_stiffnessMatrix.coeffRef(i, i) = this->_nodes[i].mass / h2;
+    }
+
+    for (PositionConstraint& constraint : this->_positionConstraints) {
+      constraint.setupGlobalStiffnessMatrix(this->_stiffnessMatrix);
+    }
+
+    for (DistanceConstraint& constraint : this->_distanceConstraints) {
+      constraint.setupGlobalStiffnessMatrix(this->_stiffnessMatrix);
+    }
+
+    for (TetrahedralConstraint& constraint : this->_tetConstraints) {
+      constraint.setupGlobalStiffnessMatrix(this->_stiffnessMatrix);
+    }
+
+    // Perform Sparse Cholesky LLT factorization
+    this->_pLltDecomp =
+        std::make_unique<Eigen::SimplicialLLT<Eigen::SparseMatrix<float>>>(
+            this->_stiffnessMatrix);
+
+    // Set the correct allocations for the force and state vectors
+    this->_stateVector = Eigen::MatrixXf(nodeCount, 3);
+    this->_forceVector = Eigen::MatrixXf(nodeCount, 3);
+    this->_Msn_h2 = Eigen::MatrixXf(nodeCount, 3);
+  }
+
+  // Apply global forces
+  for (Node& node : this->_nodes) {
+    node.force = node.mass * glm::vec3(0.0f, -this->_options.gravity, 0.0f);
+  }
+
+  for (uint32_t substep = 0; substep < this->_options.timeSubsteps; ++substep) {
+    for (uint32_t i = 0; i < nodeCount; ++i) {
+      Node& node = this->_nodes[i];
+      // Construct momentum estimate for qn+1
+      node.position += h * node.velocity + h2 * node.force / node.mass;
+
+      glm::vec3 Msn_h2 = node.mass * node.position / h2;
+      this->_Msn_h2.coeffRef(i, 0) = Msn_h2.x;
+      this->_Msn_h2.coeffRef(i, 1) = Msn_h2.y;
+      this->_Msn_h2.coeffRef(i, 2) = Msn_h2.z;
+    }
+
+    for (uint32_t iter = 0; iter < this->_options.iterations; ++iter) {
+      // Construct global force vector and set initial node position estimate
+      this->_forceVector = this->_Msn_h2;
+
+      // Project all constraints onto auxiliary variable (local step)
+      // TODO: Parallelize this step
+      for (PositionConstraint& constraint : this->_positionConstraints) {
+        constraint.projectToAuxiliaryVariable(this->_nodes);
+      }
+
+      for (DistanceConstraint& constraint : this->_distanceConstraints) {
+        constraint.projectToAuxiliaryVariable(this->_nodes);
+      }
+
+      for (TetrahedralConstraint& constraint : this->_tetConstraints) {
+        constraint.projectToAuxiliaryVariable(this->_nodes);
+      }
+
+      for (PositionConstraint& constraint : this->_positionConstraints) {
+        constraint.setupGlobalForceVector(this->_forceVector);
+      }
+
+      for (DistanceConstraint& constraint : this->_distanceConstraints) {
+        constraint.setupGlobalForceVector(this->_forceVector);
+      }
+
+      for (TetrahedralConstraint& constraint : this->_tetConstraints) {
+        constraint.setupGlobalForceVector(this->_forceVector);
+      }
+
+      // Solve the global system using the precomputed factorization
+      this->_stateVector = this->_pLltDecomp->solve(this->_forceVector);
+
+      // Update node positions from the global solve results
+      for (uint32_t i = 0; i < nodeCount; ++i) {
+        Node& node = this->_nodes[i];
+        node.position.x = this->_stateVector.coeff(i, 0);
+        node.position.y = this->_stateVector.coeff(i, 1);
+        node.position.z = this->_stateVector.coeff(i, 2);
+      }
+    }
+
+    // Update node velocities
+    for (uint32_t i = 0; i < nodeCount; ++i) {
+      Node& node = this->_nodes[i];
+      node.velocity = (node.position - node.prevPosition) / h;
+      node.prevPosition = node.position;
+      this->_vertices[i].position = node.position;
+    }
+  }
+}
+
 void Solver::clear() {
   this->_lines.clear();
   this->_triangles.clear();
@@ -135,6 +259,9 @@ void Solver::clear() {
   this->_positionConstraints.clear();
   this->_vertices.clear();
   this->_constraintId = 0;
+
+  this->_stateVector = {};
+  this->_stiffnessMatrix = {};
 
   this->renderStateDirty = true;
 }
