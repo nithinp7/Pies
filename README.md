@@ -12,3 +12,5 @@
   - Node-Node collision detection / resolution
 
 <img src="https://github.com/nithinp7/Pies/blob/main/Media/PBDCollisions.gif" width=125%>
+<img src="https://github.com/nithinp7/Pies/blob/main/Media/PBDScene.png" width=125%>
+<img src="https://github.com/nithinp7/Pies/blob/main/Media/Reflections.png" width=125%>
