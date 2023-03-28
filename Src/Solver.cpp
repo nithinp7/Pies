@@ -152,6 +152,9 @@ void Solver::tickPD(float /*timestep*/) {
     // precomputation
     // Construct stiffness matrix
     this->_stiffnessMatrix = Eigen::SparseMatrix<float>(nodeCount, nodeCount);
+    this->_collisionMatrix = Eigen::SparseMatrix<float>(nodeCount, nodeCount);
+    this->_stiffnessAndCollisionMatrix =
+        Eigen::SparseMatrix<float>(nodeCount, nodeCount);
 
     for (uint32_t i = 0; i < nodeCount; ++i) {
       this->_stiffnessMatrix.coeffRef(i, i) = this->_nodes[i].mass / h2;
@@ -197,6 +200,7 @@ void Solver::tickPD(float /*timestep*/) {
       this->_Msn_h2.coeffRef(i, 2) = Msn_h2.z;
     }
 
+    // float omega = 1.0f;
     for (uint32_t iter = 0; iter < this->_options.iterations; ++iter) {
       // Construct global force vector and set initial node position estimate
       this->_forceVector = this->_Msn_h2;
@@ -227,6 +231,74 @@ void Solver::tickPD(float /*timestep*/) {
         constraint.setupGlobalForceVector(this->_forceVector);
       }
 
+      // Update collisions
+      this->_collisions.clear();
+      this->_staticCollisions.clear();
+      this->_collisionMatrix.setZero();
+      this->_stiffnessAndCollisionMatrix.setZero();
+
+      this->_spatialHashNodes.clear();
+      this->_spatialHashNodes.parallelBulkInsert(this->_nodes, {});
+
+      // TODO: This adds each collision twice, can this be improved?
+      // Detect and resolve collisions
+      // TODO: Parallelize this!!
+      std::vector<SpatialHashGridCellBucket<Node>*> scratchBuckets;
+      for (Node& node : this->_nodes) {
+        this->_spatialHashNodes.findCollisions(node, {}, scratchBuckets);
+        for (SpatialHashGridCellBucket<Node>* pBucket : scratchBuckets) {
+          // Check each node within each bucket
+          for (Node* pOtherNode : pBucket->values) {
+            if (node.id <= pOtherNode->id) {
+              // Only fill lower-triangular matrix
+              continue;
+            }
+
+            glm::vec3 diff = pOtherNode->position - node.position;
+            float dist = glm::length(diff);
+            float dispLength = node.radius + pOtherNode->radius - dist;
+
+            if (dispLength <= 0.0f) {
+              continue;
+            }
+
+            glm::vec3 disp;
+            if (dist > 0.00001f) {
+              disp = dispLength * diff / dist;
+            } else {
+              disp = glm::vec3(dispLength, 0.0f, 0.0f);
+            }
+
+            CollisionConstraint& collision =
+                this->_collisions.emplace_back(node, *pOtherNode, disp);
+            collision.setupCollisionMatrix(this->_collisionMatrix);
+            collision.setupGlobalForceVector(this->_forceVector);
+          }
+        }
+
+        if (node.position.y - node.radius < this->_options.floorHeight) {
+          StaticCollisionConstraint& collision =
+              this->_staticCollisions.emplace_back(
+                  node,
+                  glm::vec3(
+                      node.position.x,
+                      this->_options.floorHeight + node.radius,
+                      node.position.z));
+          collision.setupCollisionMatrix(this->_collisionMatrix);
+          collision.setupGlobalForceVector(this->_forceVector);
+        }
+      }
+      this->_stiffnessAndCollisionMatrix =
+          this->_stiffnessMatrix + this->_collisionMatrix;
+      // TODO: Just for testing, don't solve collision this way.
+      this->_pLltDecomp =
+          std::make_unique<Eigen::SimplicialLLT<Eigen::SparseMatrix<float>>>(
+              this->_stiffnessAndCollisionMatrix);
+
+      // Parallelize solving x,y,z coordinates
+      // Note: Make sure to offset the starting node index of each thread
+      // to avoid false-sharing when writing to the state vector
+
       // Solve the global system using the precomputed factorization
       this->_stateVector = this->_pLltDecomp->solve(this->_forceVector);
 
@@ -237,15 +309,56 @@ void Solver::tickPD(float /*timestep*/) {
         node.position.y = this->_stateVector.coeff(i, 1);
         node.position.z = this->_stateVector.coeff(i, 2);
       }
+
+      // float p; //???
+      // omega = 4.0 / (4.0 - p * p * omega);
     }
 
     // Update node velocities
     for (uint32_t i = 0; i < nodeCount; ++i) {
       Node& node = this->_nodes[i];
-      node.velocity = (node.position - node.prevPosition) / h;
+      node.velocity = (1.0f - this->_options.damping) *
+                      (node.position - node.prevPosition) / h;
+
       node.prevPosition = node.position;
       this->_vertices[i].position = node.position;
     }
+
+    // Update friction
+  //   for (const CollisionConstraint& collision : this->_collisions) {
+  //     Node& a = this->_nodes[collision.nodeIds[0]];
+  //     Node& b = this->_nodes[collision.nodeIds[1]];
+
+  //     // TODO: Add friction between dynamic objects
+  //     glm::vec3 relativeVelocity = b.velocity - a.velocity;
+  //     glm::vec3 perpVel = relativeVelocity -
+  //                         glm::dot(relativeVelocity, collision.n) * collision.n;
+
+  //     float friction = this->_options.friction;
+  //     // if (glm::length(perpVel) < 0.1f) {
+  //     //   friction = 1.0f;
+  //     // }
+
+  //     float massSum = a.mass + b.mass;
+
+  //     // TODO: Decouple friction from solver iteration count
+  //     a.velocity += -friction * perpVel * a.mass / massSum;
+  //     b.velocity += friction * perpVel * b.mass / massSum;
+  //   }
+
+  //   for (const StaticCollisionConstraint& collision : this->_staticCollisions) {
+  //     Node& node = this->_nodes[collision.nodeId];
+
+  //     glm::vec3 perpVel =
+  //         node.velocity - glm::dot(node.velocity, collision.n) * collision.n;
+
+  //     float friction = this->_options.friction;
+  //     // if (glm::length(perpVel) < 0.1f) {
+  //     //   friction = 1.0f;
+  //     // }
+
+  //     node.velocity += -friction * perpVel;
+  //   }
   }
 }
 

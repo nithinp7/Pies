@@ -42,7 +42,7 @@ void Solver::createTetBox(
     float scale,
     const glm::vec3& initialVelocity,
     float stiffness) {
-  Grid grid{4, 4, 4};
+  Grid grid{3, 3, 3};
 
   size_t currentNodeCount = this->_nodes.size();
   size_t currentTetConstraintsCount = this->_tetConstraints.size();
@@ -69,10 +69,10 @@ void Solver::createTetBox(
         node.radius = 0.5f * scale;
         node.mass = 1.0f;
 
-        if (i == 0 && j == 0) {
-          this->_positionConstraints.push_back(
-              createPositionConstraint(this->_constraintId++, node, stiffness));
-        }
+        // if (i == 0 && j == 0) {
+        //   this->_positionConstraints.push_back(
+        //       createPositionConstraint(this->_constraintId++, node, stiffness));
+        // }
       }
     }
   }
@@ -547,7 +547,7 @@ void Solver::createBox(
 }
 
 void Solver::createSheet(const glm::vec3& translation, float scale, float stiffness) {
-  Grid grid{20, 20, 1};
+  Grid grid{12, 12, 1};
 
   size_t currentNodeCount = this->_nodes.size();
   size_t currentDistConstraintsCount = this->_distanceConstraints.size();
@@ -573,7 +573,7 @@ void Solver::createSheet(const glm::vec3& translation, float scale, float stiffn
         node.radius = 0.5f * scale;
         node.mass = 1.0f;
 
-        if (i == 0) {
+        if (i == 0 || i == (grid.width - 1)) {
           this->_positionConstraints.push_back(
               createPositionConstraint(this->_constraintId++, node, stiffness));
         }

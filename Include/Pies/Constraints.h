@@ -26,6 +26,12 @@ protected:
   // A constant weight for this constraint.
   float _w = 1.0f;
 
+  // TODO: This should be defined by the templated constraint implementation,
+  // individual constraints do not need to differ wrt matrix A and B.
+
+  // TODO: This should be defined by the templated constraint implementation,
+  // individual constraints do not need to differ wrt matrix A and B.
+
   // Precomputed values defining the energy potential for the constraint
   // See the Projective Dynamics paper for more information about A and B.
   Eigen::Matrix<float, NodeCount, NodeCount> _AtA;
