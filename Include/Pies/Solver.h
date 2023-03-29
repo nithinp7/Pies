@@ -57,6 +57,7 @@ public:
       const glm::vec3& initialVelocity,
       float stiffness);
   void createSheet(const glm::vec3& translation, float scale, float k);
+  void createBendSheet(const glm::vec3& translation, float scale, float k);
 
 private:
   struct NodeCompRange {
@@ -82,6 +83,7 @@ private:
   std::vector<PositionConstraint> _positionConstraints;
   std::vector<DistanceConstraint> _distanceConstraints;
   std::vector<TetrahedralConstraint> _tetConstraints;
+  std::vector<BendConstraint> _bendConstraints;
 
   // TODO: Seperate into individual buffers for each object??
   std::vector<uint32_t> _triangles;
