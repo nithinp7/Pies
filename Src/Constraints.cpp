@@ -179,15 +179,68 @@ void BendConstraintProjection::operator()(
   const Node& x3 = nodes[nodeIds[2]];
   const Node& x4 = nodes[nodeIds[3]];
 
-  glm::vec3 x21 = x2.position - x1.position;
-  glm::vec3 x31 = x3.position - x1.position;
-  glm::vec3 x41 = x4.position - x1.position;
+  glm::vec3 p2 = x2.position - x1.position;
+  glm::vec3 p3 = x3.position - x1.position;
+  glm::vec3 p4 = x4.position - x1.position;
 
-  glm::vec3 x21Cx31 = glm::cross(x21, x31);
-  glm::vec3 x21Cx41 = glm::cross(x21, x41);
+  glm::vec3 p2Xp3 = glm::cross(p2, p3);
+  glm::vec3 p2Xp4 = glm::cross(p2, p4);
 
-  glm::vec3 arg1 = x21Cx31 / glm::dot(x21Cx31, x21Cx31);
-  glm::vec3 arg2 = x21Cx31 / glm::dot(x21Cx31, x21Cx31);
+  glm::vec3 n1 = p2Xp3 / glm::dot(p2Xp3, p2Xp3);
+  glm::vec3 n2 = p2Xp4 / glm::dot(p2Xp4, p2Xp4);
+  float d = glm::dot(n1, n2);
+
+  float C = acos(glm::dot(n1, n2)) - this->initialAngle;
+  projected[0] = x1.position;
+  projected[1] = x2.position;
+  projected[2] = x3.position;
+  projected[3] = x4.position;
+
+  glm::vec3 q3 = (glm::cross(p2, n2) + (glm::cross(n1, p2) * d)) / glm::dot(p2Xp3, p2Xp3);
+  glm::vec3 q4 = (glm::cross(p2, n1) + (glm::cross(n2, p2) * d)) / glm::dot(p2Xp4, p2Xp4);
+  glm::vec3 q2 = -((glm::cross(p3, n2) + (glm::cross(n1, p3) * d)) / glm::dot(p2Xp3, p2Xp3))
+    -((glm::cross(p4, n1) + (glm::cross(n2, p4) * d)) / glm::dot(p2Xp4, p2Xp4));
+  glm::vec3 q1 = -q2 - q3 - q4;
+
+  float massSum = x1.mass + x2.mass + x3.mass + x4.mass;
+  float qSquaredSum = pow(glm::length(q1), 2) + pow(glm::length(q2), 2) + pow(glm::length(q3), 2) + pow(glm::length(q4), 2);
+  float projNumerator = sqrt(1 - pow(d, 2)) * (acos(d) - this->initialAngle);
+
+  //divided by massSum or massSum - m_i?
+  //Based on Bending Constraint Projection in Appendix A of PBD 2007 Paper
+  projected[0] += -q1 * (4 * x1.mass / massSum) * (projNumerator) / qSquaredSum;
+  projected[1] += -q2 * (4 * x2.mass / massSum) * (projNumerator) / qSquaredSum;
+  projected[2] += -q3 * (4 * x3.mass / massSum) * (projNumerator) / qSquaredSum;
+  projected[3] += -q4 * (4 * x4.mass / massSum) * (projNumerator) / qSquaredSum;
+}
+
+BendConstraint createBendConstraint(
+    uint32_t id,
+    float k,
+    const Node& x1,
+    const Node& x2,
+    const Node& x3,
+    const Node& x4) {
+
+  glm::vec3 p2 = x2.position - x1.position;
+  glm::vec3 p3 = x3.position - x1.position;
+  glm::vec3 p4 = x4.position - x1.position;
+
+  glm::vec3 p2Xp3 = glm::cross(p2, p3);
+  glm::vec3 p2Xp4 = glm::cross(p2, p4);
+
+  glm::vec3 n1 = p2Xp3 / glm::dot(p2Xp3, p2Xp3);
+  glm::vec3 n2 = p2Xp4 / glm::dot(p2Xp4, p2Xp4);
+
+  //TODO: DOUBLE-CHECK / REPLACE
+  float targetAngle = acos(glm::dot(n1, n2));
+
+  return BendConstraint(
+    id,
+    k,
+    {targetAngle}, //NOT CONFIDENT ABOUT THIS
+    {x1.id, x2.id, x3.id, x4.id}
+  );
 }
 
 } // namespace Pies
