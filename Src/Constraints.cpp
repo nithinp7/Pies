@@ -168,4 +168,26 @@ VolumeConstraint createVolumeConstraint(
   float targetVolume = glm::dot(glm::cross(x21, x31), x41) / 6.0f;
   return VolumeConstraint(id, k, {targetVolume}, {x1.id, x2.id, x3.id, x4.id});
 }
+
+void BendConstraintProjection::operator()(
+    const std::vector<Node>& nodes,
+    const std::array<uint32_t, 4>& nodeIds,
+    std::array<glm::vec3, 4>& projected) const {
+
+  const Node& x1 = nodes[nodeIds[0]];
+  const Node& x2 = nodes[nodeIds[1]];
+  const Node& x3 = nodes[nodeIds[2]];
+  const Node& x4 = nodes[nodeIds[3]];
+
+  glm::vec3 x21 = x2.position - x1.position;
+  glm::vec3 x31 = x3.position - x1.position;
+  glm::vec3 x41 = x4.position - x1.position;
+
+  glm::vec3 x21Cx31 = glm::cross(x21, x31);
+  glm::vec3 x21Cx41 = glm::cross(x21, x41);
+
+  glm::vec3 arg1 = x21Cx31 / glm::dot(x21Cx31, x21Cx31);
+  glm::vec3 arg2 = x21Cx31 / glm::dot(x21Cx31, x21Cx31);
+}
+
 } // namespace Pies

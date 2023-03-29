@@ -168,4 +168,22 @@ VolumeConstraint createVolumeConstraint(
 // };
 // typedef Constraint<2, CollisionConstraintProjection> CollisionConstraint;
 // CollisionConstraint createCollisionConstraint(uint32_t id, Node* a, Node* b);
+
+struct BendConstraintProjection {
+  float initialAngle;
+
+  void operator()(
+      const std::vector<Node>& nodes,
+      const std::array<uint32_t, 4>& nodeIds,
+      std::array<glm::vec3, 4>& projected) const;
+};
+typedef Constraint<4, BendConstraintProjection> BendConstraint;
+BendConstraint createBendConstraint(
+    uint32_t id,
+    float k,
+    const Node& a,
+    const Node& b,
+    const Node& c,
+    const Node& d);
+
 } // namespace Pies
