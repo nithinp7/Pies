@@ -94,7 +94,7 @@ void Solver::tickPBD(float /*timestep*/) {
                 relativeVelocity - glm::dot(relativeVelocity, dir) * dir;
 
             float friction = this->_options.friction;
-            if (glm::length(perpVel) < 5.0f) {
+            if (glm::length(perpVel) < this->_options.staticFrictionThreshold) {
               friction = 1.0f;
             }
 
@@ -200,7 +200,6 @@ void Solver::tickPD(float /*timestep*/) {
       this->_Msn_h2.coeffRef(i, 2) = Msn_h2.z;
     }
 
-    // float omega = 1.0f;
     for (uint32_t iter = 0; iter < this->_options.iterations; ++iter) {
       // Construct global force vector and set initial node position estimate
       this->_forceVector = this->_Msn_h2;
@@ -325,40 +324,47 @@ void Solver::tickPD(float /*timestep*/) {
     }
 
     // Update friction
-  //   for (const CollisionConstraint& collision : this->_collisions) {
-  //     Node& a = this->_nodes[collision.nodeIds[0]];
-  //     Node& b = this->_nodes[collision.nodeIds[1]];
+    for (const CollisionConstraint& collision : this->_collisions) {
+      Node& a = this->_nodes[collision.nodeIds[0]];
+      Node& b = this->_nodes[collision.nodeIds[1]];
 
-  //     // TODO: Add friction between dynamic objects
-  //     glm::vec3 relativeVelocity = b.velocity - a.velocity;
-  //     glm::vec3 perpVel = relativeVelocity -
-  //                         glm::dot(relativeVelocity, collision.n) * collision.n;
+      glm::vec3 diff = b.position - a.position;
+      float dist = glm::length(diff);
 
-  //     float friction = this->_options.friction;
-  //     // if (glm::length(perpVel) < 0.1f) {
-  //     //   friction = 1.0f;
-  //     // }
+      if (dist > a.radius + b.radius) {
+        continue;
+      }
 
-  //     float massSum = a.mass + b.mass;
+      glm::vec3 n = diff / dist;
 
-  //     // TODO: Decouple friction from solver iteration count
-  //     a.velocity += -friction * perpVel * a.mass / massSum;
-  //     b.velocity += friction * perpVel * b.mass / massSum;
-  //   }
+      glm::vec3 relativeVelocity = b.velocity - a.velocity;
+      glm::vec3 perpVel = relativeVelocity -
+                          glm::dot(relativeVelocity, n) * n;
 
-  //   for (const StaticCollisionConstraint& collision : this->_staticCollisions) {
-  //     Node& node = this->_nodes[collision.nodeId];
+      float friction = -this->_options.friction;
+      if (glm::length(perpVel) < this->_options.staticFrictionThreshold) {
+        friction = 1.0f;
+      }
 
-  //     glm::vec3 perpVel =
-  //         node.velocity - glm::dot(node.velocity, collision.n) * collision.n;
+      float massSum = a.mass + b.mass;
 
-  //     float friction = this->_options.friction;
-  //     // if (glm::length(perpVel) < 0.1f) {
-  //     //   friction = 1.0f;
-  //     // }
+      a.velocity += -friction * perpVel * a.mass / massSum;
+      b.velocity += friction * perpVel * b.mass / massSum;
+    }
 
-  //     node.velocity += -friction * perpVel;
-  //   }
+    for (const StaticCollisionConstraint& collision : this->_staticCollisions) {
+      Node& node = this->_nodes[collision.nodeId];
+
+      glm::vec3 perpVel =
+          node.velocity - glm::dot(node.velocity, collision.n) * collision.n;
+
+      float friction = this->_options.friction;
+      if (glm::length(perpVel) < this->_options.staticFrictionThreshold) {
+        friction = 1.0f;
+      }
+
+      node.velocity += -friction * perpVel;
+    }
   }
 }
 

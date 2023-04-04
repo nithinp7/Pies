@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Constraints.h"
 #include "CollisionConstraint.h"
+#include "Constraints.h"
 #include "Node.h"
 #include "SpatialHash.h"
 #include "Tetrahedron.h"
@@ -11,8 +11,8 @@
 #include <Eigen/SparseCore>
 
 #include <cstdint>
-#include <vector>
 #include <memory>
+#include <vector>
 
 namespace Pies {
 enum class SolverName { PBD, PD };
@@ -22,8 +22,9 @@ struct SolverOptions {
   uint32_t timeSubsteps = 1;
   float fixedTimestepSize = 0.012f;
   float gravity = 10.0f;
-  float damping = 0.001f;
-  float friction = 0.05f;
+  float damping = 0.0005f;
+  float friction = 0.01f;
+  float staticFrictionThreshold = 0.0f;
   float floorHeight = 0.0f;
   float gridSpacing = 1.0f;
   SolverName solver = SolverName::PD;
@@ -66,8 +67,11 @@ public:
       const glm::vec3& translation,
       float scale,
       const glm::vec3& initialVelocity,
-      float stiffness);
-  void createSheet(const glm::vec3& translation, float scale, float k);
+      float stiffness,
+      float mass,
+      bool hinged);
+  void
+  createSheet(const glm::vec3& translation, float scale, float mass, float k);
 
 private:
   struct NodeCompRange {
@@ -102,8 +106,7 @@ private:
   Eigen::SparseMatrix<float> _collisionMatrix;
   Eigen::SparseMatrix<float> _stiffnessAndCollisionMatrix;
   // This isn't movable, so we keep it on the heap
-  std::unique_ptr<Eigen::SimplicialLLT<Eigen::SparseMatrix<float>>>
-      _pLltDecomp;
+  std::unique_ptr<Eigen::SimplicialLLT<Eigen::SparseMatrix<float>>> _pLltDecomp;
 
   std::vector<CollisionConstraint> _collisions;
   std::vector<StaticCollisionConstraint> _staticCollisions;

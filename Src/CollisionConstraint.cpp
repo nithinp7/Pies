@@ -9,9 +9,10 @@ CollisionConstraint::CollisionConstraint(
     const glm::vec3& disp)
     : nodeIds{a.id, b.id}, 
       n(0.0f) {
+  // TODO: Use inverse-mass for weighting instead!!
   float massSum = a.mass + b.mass;
-  this->projectedPositions[0] = a.position - disp * a.mass / massSum;
-  this->projectedPositions[1] = b.position + disp * b.mass / massSum;
+  this->projectedPositions[0] = a.position - disp * b.mass / massSum;
+  this->projectedPositions[1] = b.position + disp * a.mass / massSum;
 
   float dispLength = glm::length(disp);
   if (dispLength > 0.00001f) {
