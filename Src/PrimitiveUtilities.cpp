@@ -686,7 +686,7 @@ void Solver::createBendSheet(const glm::vec3& translation, float scale, float k)
         node.radius = 0.5f * scale;
         node.mass = 1.0f;
 
-        if (i == 0) {
+        if (i < 3) {
           this->_positionConstraints.push_back(
               createPositionConstraint(this->_constraintId++, node));
         }
@@ -747,8 +747,8 @@ void Solver::createBendSheet(const glm::vec3& translation, float scale, float k)
                 this->_constraintId++,
                 1.0, //TODO CHANGE K
                 this->_nodes[node00],
-                this->_nodes[node11], //shared edge
-                this->_nodes[node10], // shared edge
+                this->_nodes[node11],
+                this->_nodes[node10],
                 this->_nodes[node01]
                 ));
         }
@@ -763,9 +763,9 @@ void Solver::createBendSheet(const glm::vec3& translation, float scale, float k)
             this->_bendConstraints.push_back(createBendConstraint(
                 this->_constraintId++,
                 1.0, //TODO CHANGE K
-                this->_nodes[node00],
                 this->_nodes[node10],
                 this->_nodes[node11],
+                this->_nodes[node00],
                 this->_nodes[node21]
             ));
 
@@ -773,9 +773,9 @@ void Solver::createBendSheet(const glm::vec3& translation, float scale, float k)
             this->_bendConstraints.push_back(createBendConstraint(
                 this->_constraintId++,
                 1.0, //TODO CHANGE K
-                this->_nodes[node00],
                 this->_nodes[node01],
                 this->_nodes[node11],
+                this->_nodes[node00],
                 this->_nodes[node12]
             ));
         }
