@@ -747,13 +747,38 @@ void Solver::createBendSheet(const glm::vec3& translation, float scale, float k)
                 this->_constraintId++,
                 1.0, //TODO CHANGE K
                 this->_nodes[node00],
-                this->_nodes[node11],
-                this->_nodes[node10],
+                this->_nodes[node11], //shared edge
+                this->_nodes[node10], // shared edge
                 this->_nodes[node01]
                 ));
         }
 
-        //TODO: ADD GRID-ALIGNED BEND CONSTRAINTS
+        if (i < (grid.width - 2) && j < (grid.height - 2)) {
+            uint32_t node02 = grid.gridIdToNodeId(currentNodeCount, {i, j + 2, 0});
+            uint32_t node12 = grid.gridIdToNodeId(currentNodeCount, {i + 1, j + 2, 0});
+            uint32_t node20 = grid.gridIdToNodeId(currentNodeCount, {i + 2, j, 0});
+            uint32_t node21 = grid.gridIdToNodeId(currentNodeCount, {i + 2, j + 1, 0});
+
+            //shared edge to the right of current grid square
+            this->_bendConstraints.push_back(createBendConstraint(
+                this->_constraintId++,
+                1.0, //TODO CHANGE K
+                this->_nodes[node00],
+                this->_nodes[node10],
+                this->_nodes[node11],
+                this->_nodes[node21]
+            ));
+
+            //shared edge to the right of current grid square
+            this->_bendConstraints.push_back(createBendConstraint(
+                this->_constraintId++,
+                1.0, //TODO CHANGE K
+                this->_nodes[node00],
+                this->_nodes[node01],
+                this->_nodes[node11],
+                this->_nodes[node12]
+            ));
+        }
     }
   }
 
