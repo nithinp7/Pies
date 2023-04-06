@@ -9,4 +9,4 @@
 	url = git@github.com:greg7mdp/parallel-hashmap
 [submodule "Extern/eigen"]
 	path = Extern/eigen
-	url = git@github.com:libigl/eigen.git
+	url = git@github.com:nithinp7/eigen.git
