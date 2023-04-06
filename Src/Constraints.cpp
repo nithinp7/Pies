@@ -21,10 +21,11 @@ void DistanceConstraintProjection::operator()(
   }
 
   float disp = glm::min(this->targetDistance - dist, 0.0f);
-  float massSum = a.mass + b.mass;
 
-  projected[0] = a.position - disp * dir * a.mass / massSum;
-  projected[1] = b.position + disp * dir * b.mass / massSum;
+  float wSum = a.invMass + b.invMass;
+
+  projected[0] = a.position - disp * dir * a.invMass / wSum;
+  projected[1] = b.position + disp * dir * b.invMass / wSum;
 }
 
 DistanceConstraint
@@ -95,17 +96,17 @@ void TetrahedralConstraintProjection::operator()(
       glm::vec3 dCijdx1 = -glm::column(dCijdX, 0) - glm::column(dCijdX, 1) -
                           glm::column(dCijdX, 2);
       float denom =
-          x1.mass * glm::dot(dCijdx1, dCijdx1) +
-          x2.mass * glm::dot(glm::column(dCijdX, 0), glm::column(dCijdX, 0)) +
-          x3.mass * glm::dot(glm::column(dCijdX, 1), glm::column(dCijdX, 1)) +
-          x4.mass * glm::dot(glm::column(dCijdX, 2), glm::column(dCijdX, 2));
+          x1.invMass * glm::dot(dCijdx1, dCijdx1) +
+          x2.invMass * glm::dot(glm::column(dCijdX, 0), glm::column(dCijdX, 0)) +
+          x3.invMass * glm::dot(glm::column(dCijdX, 1), glm::column(dCijdX, 1)) +
+          x4.invMass * glm::dot(glm::column(dCijdX, 2), glm::column(dCijdX, 2));
       float lambda = C[i][j] / denom;
 
       // Recompute F from projected positions?
-      projected[0] += -lambda * x1.mass * dCijdx1;
-      projected[1] += -lambda * x2.mass * glm::column(dCijdX, 0);
-      projected[2] += -lambda * x3.mass * glm::column(dCijdX, 1);
-      projected[3] += -lambda * x4.mass * glm::column(dCijdX, 2);
+      projected[0] += -lambda * x1.invMass * dCijdx1;
+      projected[1] += -lambda * x2.invMass * glm::column(dCijdX, 0);
+      projected[2] += -lambda * x3.invMass * glm::column(dCijdX, 1);
+      projected[3] += -lambda * x4.invMass * glm::column(dCijdX, 2);
     }
   }
 }
@@ -155,13 +156,12 @@ void VolumeConstraintProjection::operator()(
                      glm::dot(dCdx3, dCdx3) + glm::dot(dCdx4, dCdx4);
 
   float lambda = -C / dCdX_magsq;
-  float massSum = x1.mass + x2.mass + x3.mass + x4.mass;
+  float wSum = x1.invMass + x2.invMass + x3.invMass + x4.invMass;
 
-  // TODO: add in mass / massSum
-  projected[0] = x1.position + lambda * dCdx1; // * x1.mass / massSum;
-  projected[1] = x2.position + lambda * dCdx2; // * x2.mass / massSum;
-  projected[2] = x3.position + lambda * dCdx3; // * x3.mass / massSum;
-  projected[3] = x4.position + lambda * dCdx4; // * x4.mass / massSum;
+  projected[0] = x1.position + lambda * dCdx1 * x1.invMass / wSum;
+  projected[1] = x2.position + lambda * dCdx2 * x2.invMass / wSum;
+  projected[2] = x3.position + lambda * dCdx3 * x3.invMass / wSum;
+  projected[3] = x4.position + lambda * dCdx4 * x4.invMass / wSum;
 }
 
 VolumeConstraint createVolumeConstraint(

@@ -73,7 +73,7 @@ public:
   void findCollisions(
       const TValue& value, 
       const TCompRange& compRangeFn,
-      std::vector<SpatialHashGridCellBucket<TValue>*>& collidingBuckets) {
+      std::vector<const SpatialHashGridCellBucket<TValue>*>& collidingBuckets) const {
     SpatialHashGridCellRange range = compRangeFn(value, this->_grid);
 
     for (uint32_t dx = 0; dx < range.lengthX; ++dx) {

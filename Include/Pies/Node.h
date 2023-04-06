@@ -16,6 +16,6 @@ struct Node {
   glm::vec3 velocity{};
   glm::vec3 force{};
   float radius = 0.1f;
-  float mass = 1.0f;
+  float invMass = 1.0f;
 };
 } // namespace Pies

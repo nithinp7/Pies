@@ -73,7 +73,7 @@ void Solver::createTetBox(
         node.prevPosition = node.position;
         node.velocity = initialVelocity;
         node.radius = 0.5f * scale;
-        node.mass = mass;
+        node.invMass = 1.0f / mass;
 
         if (hinged && i == 0) {//} && j == 0) {
           this->_positionConstraints.push_back(
@@ -332,7 +332,7 @@ void Solver::createBox(
         node.prevPosition = node.position;
         node.velocity = glm::vec3(0.0f);
         node.radius = 0.5f * scale;
-        node.mass = 1.0f;
+        node.invMass = 1.0f;
 
         // if (i == 0 && j == 0) {
         //   this->_positionConstraints.push_back(
@@ -581,7 +581,7 @@ void Solver::createSheet(
       node.prevPosition = node.position;
       node.velocity = glm::vec3(0.0f);
       node.radius = 0.5f * scale;
-      node.mass = mass;
+      node.invMass = 1.0f / mass;
 
       if (i == 0 || i == (grid.width - 1)) {
         this->_positionConstraints.push_back(

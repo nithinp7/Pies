@@ -27,6 +27,7 @@ struct SolverOptions {
   float staticFrictionThreshold = 0.0f;
   float floorHeight = 0.0f;
   float gridSpacing = 1.0f;
+  uint32_t threadCount = 12;
   SolverName solver = SolverName::PD;
 };
 
@@ -74,6 +75,9 @@ public:
   createSheet(const glm::vec3& translation, float scale, float mass, float k);
 
 private:
+  void _computeCollisions();
+  void _parallelComputeCollisions();
+
   struct NodeCompRange {
     SpatialHashGridCellRange
     operator()(const Node& node, const SpatialHashGrid& grid) const;
@@ -107,6 +111,13 @@ private:
   Eigen::SparseMatrix<float> _stiffnessAndCollisionMatrix;
   // This isn't movable, so we keep it on the heap
   std::unique_ptr<Eigen::SimplicialLLT<Eigen::SparseMatrix<float>>> _pLltDecomp;
+
+  struct ThreadData {
+    std::vector<CollisionConstraint> collisions;
+    std::vector<StaticCollisionConstraint> staticCollisions;
+  };
+
+  std::vector<ThreadData> _threadData;
 
   std::vector<CollisionConstraint> _collisions;
   std::vector<StaticCollisionConstraint> _staticCollisions;

@@ -2,12 +2,17 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <cstdint>
+#include <thread>
+
 namespace Pies {
 
 Solver::Solver(const SolverOptions& options)
     : _options(options),
       _spatialHashNodes(glm::vec3(0.0f), options.gridSpacing),
-      _spatialHashTets(glm::vec3(0.0f), options.gridSpacing) {}
+      _spatialHashTets(glm::vec3(0.0f), options.gridSpacing) {
+  this->_threadData.resize(this->_options.threadCount);
+}
 
 void Solver::tick(float timestep) {
   switch (this->_options.solver) {
@@ -61,10 +66,10 @@ void Solver::tickPBD(float /*timestep*/) {
       this->_spatialHashNodes.parallelBulkInsert(this->_nodes, {});
 
       // Detect and resolve collisions
-      std::vector<SpatialHashGridCellBucket<Node>*> scratchBuckets;
+      std::vector<const SpatialHashGridCellBucket<Node>*> scratchBuckets;
       for (Node& node : this->_nodes) {
         this->_spatialHashNodes.findCollisions(node, {}, scratchBuckets);
-        for (SpatialHashGridCellBucket<Node>* pBucket : scratchBuckets) {
+        for (const SpatialHashGridCellBucket<Node>* pBucket : scratchBuckets) {
           // Check each node within each bucket
           for (Node* pOtherNode : pBucket->values) {
             // Check intersection
@@ -82,11 +87,11 @@ void Solver::tickPBD(float /*timestep*/) {
               dir = diff / dist;
             }
 
-            float massSum = node.mass + pOtherNode->mass;
+            float wSum = node.invMass + pOtherNode->invMass;
 
-            node.position += 0.85f * -disp * dir * node.mass / massSum;
+            node.position += 0.85f * -disp * dir * node.invMass / wSum;
             pOtherNode->position +=
-                0.85f * disp * dir * pOtherNode->mass / massSum;
+                0.85f * disp * dir * pOtherNode->invMass / wSum;
 
             // TODO: Add friction between dynamic objects
             glm::vec3 relativeVelocity = pOtherNode->velocity - node.velocity;
@@ -99,9 +104,9 @@ void Solver::tickPBD(float /*timestep*/) {
             }
 
             // TODO: Decouple friction from solver iteration count
-            node.velocity += -friction * perpVel * node.mass / massSum;
+            node.velocity += -friction * perpVel * node.invMass / wSum;
             pOtherNode->velocity +=
-                friction * perpVel * pOtherNode->mass / massSum;
+                friction * perpVel * pOtherNode->invMass / wSum;
           }
         }
 
@@ -157,7 +162,8 @@ void Solver::tickPD(float /*timestep*/) {
         Eigen::SparseMatrix<float>(nodeCount, nodeCount);
 
     for (uint32_t i = 0; i < nodeCount; ++i) {
-      this->_stiffnessMatrix.coeffRef(i, i) = this->_nodes[i].mass / h2;
+      this->_stiffnessMatrix.coeffRef(i, i) =
+          1.0f / (this->_nodes[i].invMass * h2);
     }
 
     for (PositionConstraint& constraint : this->_positionConstraints) {
@@ -185,16 +191,16 @@ void Solver::tickPD(float /*timestep*/) {
 
   // Apply global forces
   for (Node& node : this->_nodes) {
-    node.force = node.mass * glm::vec3(0.0f, -this->_options.gravity, 0.0f);
+    node.force = glm::vec3(0.0f, -this->_options.gravity, 0.0f) / node.invMass;
   }
 
   for (uint32_t substep = 0; substep < this->_options.timeSubsteps; ++substep) {
     for (uint32_t i = 0; i < nodeCount; ++i) {
       Node& node = this->_nodes[i];
       // Construct momentum estimate for qn+1
-      node.position += h * node.velocity + h2 * node.force / node.mass;
+      node.position += h * node.velocity + h2 * node.force * node.invMass;
 
-      glm::vec3 Msn_h2 = node.mass * node.position / h2;
+      glm::vec3 Msn_h2 = node.position / node.invMass / h2;
       this->_Msn_h2.coeffRef(i, 0) = Msn_h2.x;
       this->_Msn_h2.coeffRef(i, 1) = Msn_h2.y;
       this->_Msn_h2.coeffRef(i, 2) = Msn_h2.z;
@@ -230,63 +236,9 @@ void Solver::tickPD(float /*timestep*/) {
         constraint.setupGlobalForceVector(this->_forceVector);
       }
 
-      // Update collisions
-      this->_collisions.clear();
-      this->_staticCollisions.clear();
-      this->_collisionMatrix.setZero();
-      this->_stiffnessAndCollisionMatrix.setZero();
+      // this->_computeCollisions();
+      this->_parallelComputeCollisions();
 
-      this->_spatialHashNodes.clear();
-      this->_spatialHashNodes.parallelBulkInsert(this->_nodes, {});
-
-      // TODO: This adds each collision twice, can this be improved?
-      // Detect and resolve collisions
-      // TODO: Parallelize this!!
-      std::vector<SpatialHashGridCellBucket<Node>*> scratchBuckets;
-      for (Node& node : this->_nodes) {
-        this->_spatialHashNodes.findCollisions(node, {}, scratchBuckets);
-        for (SpatialHashGridCellBucket<Node>* pBucket : scratchBuckets) {
-          // Check each node within each bucket
-          for (Node* pOtherNode : pBucket->values) {
-            if (node.id <= pOtherNode->id) {
-              // Only fill lower-triangular matrix
-              continue;
-            }
-
-            glm::vec3 diff = pOtherNode->position - node.position;
-            float dist = glm::length(diff);
-            float dispLength = node.radius + pOtherNode->radius - dist;
-
-            if (dispLength <= 0.0f) {
-              continue;
-            }
-
-            glm::vec3 disp;
-            if (dist > 0.00001f) {
-              disp = dispLength * diff / dist;
-            } else {
-              disp = glm::vec3(dispLength, 0.0f, 0.0f);
-            }
-
-            CollisionConstraint& collision =
-                this->_collisions.emplace_back(node, *pOtherNode, disp);
-            collision.setupCollisionMatrix(this->_collisionMatrix);
-            collision.setupGlobalForceVector(this->_forceVector);
-          }
-        }
-
-        if (node.position.y - node.radius < this->_options.floorHeight) {
-          StaticCollisionConstraint& collision =
-              this->_staticCollisions.emplace_back(
-                  node,
-                  glm::vec3(
-                      node.position.x,
-                      this->_options.floorHeight + node.radius,
-                      node.position.z));
-          collision.setupCollisionMatrix(this->_collisionMatrix);
-          collision.setupGlobalForceVector(this->_forceVector);
-        }
-      }
       this->_stiffnessAndCollisionMatrix =
           this->_stiffnessMatrix + this->_collisionMatrix;
       // TODO: Just for testing, don't solve collision this way.
@@ -338,18 +290,17 @@ void Solver::tickPD(float /*timestep*/) {
       glm::vec3 n = diff / dist;
 
       glm::vec3 relativeVelocity = b.velocity - a.velocity;
-      glm::vec3 perpVel = relativeVelocity -
-                          glm::dot(relativeVelocity, n) * n;
+      glm::vec3 perpVel = relativeVelocity - glm::dot(relativeVelocity, n) * n;
 
       float friction = -this->_options.friction;
       if (glm::length(perpVel) < this->_options.staticFrictionThreshold) {
         friction = 1.0f;
       }
 
-      float massSum = a.mass + b.mass;
+      float wSum = a.invMass + b.invMass;
 
-      a.velocity += -friction * perpVel * a.mass / massSum;
-      b.velocity += friction * perpVel * b.mass / massSum;
+      a.velocity += -friction * perpVel * a.invMass / wSum;
+      b.velocity += friction * perpVel * b.invMass / wSum;
     }
 
     for (const StaticCollisionConstraint& collision : this->_staticCollisions) {
@@ -383,6 +334,167 @@ void Solver::clear() {
   this->_stiffnessMatrix = {};
 
   this->renderStateDirty = true;
+}
+
+void Solver::_computeCollisions() {
+  // Update collisions
+  this->_collisions.clear();
+  this->_staticCollisions.clear();
+  this->_collisionMatrix.setZero();
+  this->_stiffnessAndCollisionMatrix.setZero();
+
+  this->_spatialHashNodes.clear();
+  this->_spatialHashNodes.parallelBulkInsert(this->_nodes, {});
+
+  // Detect and resolve collisions
+  // TODO: Parallelize this!!
+  std::vector<const SpatialHashGridCellBucket<Node>*> scratchBuckets;
+  for (Node& node : this->_nodes) {
+    this->_spatialHashNodes.findCollisions(node, {}, scratchBuckets);
+    for (const SpatialHashGridCellBucket<Node>* pBucket : scratchBuckets) {
+      // Check each node within each bucket
+      for (Node* pOtherNode : pBucket->values) {
+        if (node.id <= pOtherNode->id) {
+          // Only fill lower-triangular matrix
+          continue;
+        }
+
+        glm::vec3 diff = pOtherNode->position - node.position;
+        float dist = glm::length(diff);
+        float dispLength = node.radius + pOtherNode->radius - dist;
+
+        if (dispLength <= 0.0f) {
+          continue;
+        }
+
+        glm::vec3 disp;
+        if (dist > 0.00001f) {
+          disp = dispLength * diff / dist;
+        } else {
+          disp = glm::vec3(dispLength, 0.0f, 0.0f);
+        }
+
+        CollisionConstraint& collision =
+            this->_collisions.emplace_back(node, *pOtherNode, disp);
+        // collision.setupCollisionMatrix(this->_collisionMatrix);
+        // collision.setupGlobalForceVector(this->_forceVector);
+      }
+    }
+
+    if (node.position.y - node.radius < this->_options.floorHeight) {
+      StaticCollisionConstraint& collision =
+          this->_staticCollisions.emplace_back(
+              node,
+              glm::vec3(
+                  node.position.x,
+                  this->_options.floorHeight + node.radius,
+                  node.position.z));
+      // collision.setupCollisionMatrix(this->_collisionMatrix);
+      // collision.setupGlobalForceVector(this->_forceVector);
+    }
+  }
+
+  for (CollisionConstraint& collision : this->_collisions) {
+    collision.setupCollisionMatrix(this->_collisionMatrix);
+    collision.setupGlobalForceVector(this->_forceVector);
+  }
+
+  for (StaticCollisionConstraint& collision : this->_staticCollisions) {
+    collision.setupCollisionMatrix(this->_collisionMatrix);
+    collision.setupGlobalForceVector(this->_forceVector);
+  }
+}
+
+void Solver::_parallelComputeCollisions() {
+  // Update collisions
+  this->_collisions.clear();
+  this->_staticCollisions.clear();
+  this->_collisionMatrix.setZero();
+  this->_stiffnessAndCollisionMatrix.setZero();
+
+  this->_spatialHashNodes.clear();
+  this->_spatialHashNodes.parallelBulkInsert(this->_nodes, {});
+
+  // Detect and resolve collisions
+  auto fnComputeCollisions = [&nodes = this->_nodes,
+                              threadCount = this->_options.threadCount,
+                              &spatialHash = this->_spatialHashNodes,
+                              &threadData = this->_threadData,
+                              floorHeight =
+                                  this->_options.floorHeight](size_t threadId) {
+    std::vector<const SpatialHashGridCellBucket<Node>*> scratchBuckets;
+    ThreadData& data = threadData[threadId];
+
+    data.collisions.clear();
+    data.staticCollisions.clear();
+
+    for (size_t nodeId = threadId; nodeId < nodes.size();
+         nodeId += threadCount) {
+      const Node& node = nodes[nodeId];
+
+      spatialHash.findCollisions(node, {}, scratchBuckets);
+      for (const SpatialHashGridCellBucket<Node>* pBucket : scratchBuckets) {
+        // Check each node within each bucket
+        for (Node* pOtherNode : pBucket->values) {
+          if (node.id <= pOtherNode->id) {
+            // Only fill lower-triangular matrix
+            continue;
+          }
+
+          glm::vec3 diff = pOtherNode->position - node.position;
+          float dist = glm::length(diff);
+          float dispLength = node.radius + pOtherNode->radius - dist;
+
+          if (dispLength <= 0.0f) {
+            continue;
+          }
+
+          glm::vec3 disp;
+          if (dist > 0.00001f) {
+            disp = dispLength * diff / dist;
+          } else {
+            disp = glm::vec3(dispLength, 0.0f, 0.0f);
+          }
+
+          data.collisions.emplace_back(node, *pOtherNode, disp);
+        }
+      }
+
+      if (node.position.y - node.radius < floorHeight) {
+        data.staticCollisions.emplace_back(
+            node,
+            glm::vec3(
+                node.position.x,
+                floorHeight + node.radius,
+                node.position.z));
+      }
+    }
+  };
+
+  std::vector<std::thread> threads;
+  for (uint32_t threadId = 0; threadId < this->_options.threadCount;
+       ++threadId) {
+    threads.emplace_back(fnComputeCollisions, threadId);
+  }
+
+  for (std::thread& thread : threads) {
+    thread.join();
+  }
+
+  // Aggregate across per-thread results
+  for (const ThreadData& data : this->_threadData) {
+    for (const CollisionConstraint& collision : data.collisions) {
+      collision.setupCollisionMatrix(this->_collisionMatrix);
+      collision.setupGlobalForceVector(this->_forceVector);
+      this->_collisions.push_back(collision);
+    }
+
+    for (const StaticCollisionConstraint& collision : data.staticCollisions) {
+      collision.setupCollisionMatrix(this->_collisionMatrix);
+      collision.setupGlobalForceVector(this->_forceVector);
+      this->_staticCollisions.push_back(collision);
+    }
+  }
 }
 
 SpatialHashGridCellRange Solver::NodeCompRange::operator()(
