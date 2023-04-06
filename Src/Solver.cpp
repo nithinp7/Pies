@@ -42,6 +42,10 @@ void Solver::tick(float /*timestep*/) {
         constraint.projectNodePositions(this->_nodes);
       }
 
+      for (BendConstraint& constraint : this->_bendConstraints) {
+        constraint.projectNodePositions(this->_nodes);
+      }
+
       // // TODO: Collision solver
       // this->_spatialHashTets.clear();
       // this->_spatialHashTets.parallelBulkInsert(this->_tets, {this->_nodes});
