@@ -14,6 +14,11 @@
     - Parallelized collision detection
   - Node-Node collision detection / resolution
 
+## Plans
+- Currently Pies is being tested with the [Pies for Althea](https://github.com/nithinp7/PiesForAlthea) test application built on top of the [Althea](https://github.com/nithinp7/Althea) engine.
+- We plan to integrate Pies into Maya soon as well.
+- More details will be added once core features are complete.
+
 ## Projective Dynamics
 YouTube links:
 - [Projective Dynamics video 1](https://youtu.be/3i7e_A1Btxo)
@@ -26,5 +31,5 @@ YouTube link:
 <img src="https://github.com/nithinp7/Pies/blob/main/Media/PBDCollisions.gif" width=800>
 
 ## Screenshots
-<img src="https://github.com/nithinp7/Pies/blob/main/Media/PBDScene.png" width=800>
-<img src="https://github.com/nithinp7/Pies/blob/main/Media/Reflections.png" width=800>
+<img src="https://github.com/nithinp7/Pies/blob/main/Media/PBDScene.png" width=600>
+<img src="https://github.com/nithinp7/Pies/blob/main/Media/Reflections.png" width=600>
