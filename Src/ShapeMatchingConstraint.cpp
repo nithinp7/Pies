@@ -14,7 +14,7 @@ ShapeMatchingConstraint::ShapeMatchingConstraint(
       _w(w) {
   size_t vertexCount = materialCoordinates.size();
 
-  for (size_t i = 0; i < this->_materialCoordinates.size(); ++i) {
+  for (size_t i = 0; i < materialCoordinates.size(); ++i) {
     const glm::vec3& coordinate = materialCoordinates[i];
     this->_materialCoordinates.coeffRef(0, i) = coordinate.x;
     this->_materialCoordinates.coeffRef(1, i) = coordinate.y;
@@ -37,11 +37,11 @@ void ShapeMatchingConstraint::setupGlobalForceVector(
     uint32_t nodeId = this->_nodeIndices[i];
 
     forceVector.coeffRef(nodeId, 0) +=
-        this->_w * this->_projectedPositions.coeff(i, 0);
+        this->_w * this->_projectedPositions.coeff(0, i);
     forceVector.coeffRef(nodeId, 1) +=
-        this->_w * this->_projectedPositions.coeff(i, 1);
+        this->_w * this->_projectedPositions.coeff(1, i);
     forceVector.coeffRef(nodeId, 2) +=
-        this->_w * this->_projectedPositions.coeff(i, 2);
+        this->_w * this->_projectedPositions.coeff(2, i);
   }
 }
 
@@ -55,15 +55,13 @@ void ShapeMatchingConstraint::projectToAuxiliaryVariable(
     this->_currentPositions.coeffRef(2, i) = currentPosition.z;
   }
 
-  Eigen::MatrixXf T = Eigen::umeyama(
+  Eigen::Matrix4f T = Eigen::umeyama(
       this->_materialCoordinates,
       this->_currentPositions,
       false);
   Eigen::Matrix3f R = T.block(0, 0, 3, 3);
   Eigen::Vector3f t = T.block(0, 3, 3, 1);
 
-  // TODO: Check that this is doing column-wise addition of translation
-  // as intended.
-  this->_projectedPositions = R * this->_materialCoordinates + t;
+  this->_projectedPositions = (R * this->_materialCoordinates).colwise() + t;
 }
 } // namespace Pies

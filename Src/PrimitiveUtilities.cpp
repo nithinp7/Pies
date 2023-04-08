@@ -686,4 +686,65 @@ void Solver::createSheet(
   this->renderStateDirty = true;
 }
 
+void Solver::createShapeMatchingBox(
+    const glm::vec3& translation,
+    uint32_t countX,
+    uint32_t countY,
+    uint32_t countZ,
+    float scale,
+    const glm::vec3& initialVelocity,
+    float w) {
+  Grid grid{countX, countY, countZ};
+
+  size_t currentNodeCount = this->_nodes.size();
+
+  glm::vec3 boxColor = randColor();
+  float boxRoughness = randf();
+  float boxMetallic = static_cast<float>(std::rand() % 2);
+
+  // Add nodes in a grid
+  this->_nodes.reserve(
+      currentNodeCount + grid.width * grid.height * grid.depth);
+  for (uint32_t i = 0; i < grid.width; ++i) {
+    for (uint32_t j = 0; j < grid.height; ++j) {
+      for (uint32_t k = 0; k < grid.depth; ++k) {
+        uint32_t nodeId = grid.gridIdToNodeId(currentNodeCount, {i, j, k});
+
+        Node& node = this->_nodes.emplace_back();
+        node.id = nodeId;
+        node.position = scale * glm::vec3(i, j, k) + translation;
+        node.prevPosition = node.position;
+        node.velocity = glm::vec3(0.0f);
+        node.radius = 0.5f * scale;
+        node.invMass = 1.0f;
+
+        // if (i == 0 && j == 0) {
+        //   this->_positionConstraints.push_back(
+        //       createPositionConstraint(this->_constraintId++, &node));
+        // }
+      }
+    }
+  }
+
+  std::vector<uint32_t> nodeIndices(grid.width * grid.height * grid.depth);
+  std::vector<glm::vec3> materialCoords(nodeIndices.size());
+  for (uint32_t i = 0; i < nodeIndices.size(); ++i) {
+    uint32_t nodeId = static_cast<uint32_t>(currentNodeCount) + i;
+    nodeIndices[i] = nodeId;
+    materialCoords[i] = this->_nodes[nodeId].position;
+  }
+
+  this->_shapeConstraints.emplace_back(nodeIndices, materialCoords, w);
+  
+  this->_vertices.resize(this->_nodes.size());
+  for (size_t i = currentNodeCount; i < this->_nodes.size(); ++i) {
+    this->_vertices[i].position = this->_nodes[i].position;
+    this->_vertices[i].radius = this->_nodes[i].radius;
+    this->_vertices[i].baseColor = boxColor;
+    this->_vertices[i].roughness = boxRoughness;
+    this->_vertices[i].metallic = boxMetallic;
+  }
+
+  this->renderStateDirty = true;
+}
 } // namespace Pies

@@ -5,6 +5,7 @@
 #include "Node.h"
 #include "SpatialHash.h"
 #include "Tetrahedron.h"
+#include "ShapeMatchingConstraint.h"
 
 #include <Eigen/Core>
 #include <Eigen/SparseCholesky>
@@ -23,7 +24,7 @@ struct SolverOptions {
   float fixedTimestepSize = 0.012f;
   float gravity = 10.0f;
   float damping = 0.0005f;
-  float friction = 0.01f;
+  float friction = 0.05f;
   float staticFrictionThreshold = 0.0f;
   float floorHeight = 0.0f;
   float gridSpacing = 1.0f;
@@ -73,6 +74,14 @@ public:
       bool hinged);
   void
   createSheet(const glm::vec3& translation, float scale, float mass, float k);
+  void createShapeMatchingBox(
+      const glm::vec3& translation,
+      uint32_t countX,
+      uint32_t countY,
+      uint32_t countZ,
+      float scale,
+      const glm::vec3& initialVelocity,
+      float w);
 
 private:
   void _computeCollisions();
@@ -101,6 +110,7 @@ private:
   std::vector<PositionConstraint> _positionConstraints;
   std::vector<DistanceConstraint> _distanceConstraints;
   std::vector<TetrahedralConstraint> _tetConstraints;
+  std::vector<ShapeMatchingConstraint> _shapeConstraints;
 
   uint32_t _previousNodeCount = 0;
   Eigen::MatrixXf _stateVector;

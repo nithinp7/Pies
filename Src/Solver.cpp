@@ -178,6 +178,10 @@ void Solver::tickPD(float /*timestep*/) {
       constraint.setupGlobalStiffnessMatrix(this->_stiffnessMatrix);
     }
 
+    for (ShapeMatchingConstraint& constraint : this->_shapeConstraints) {
+      constraint.setupGlobalStiffnessMatrix(this->_stiffnessMatrix);
+    }
+
     // Perform Sparse Cholesky LLT factorization
     this->_pLltDecomp =
         std::make_unique<Eigen::SimplicialLLT<Eigen::SparseMatrix<float>>>(
@@ -224,6 +228,10 @@ void Solver::tickPD(float /*timestep*/) {
         constraint.projectToAuxiliaryVariable(this->_nodes);
       }
 
+      for (ShapeMatchingConstraint& constraint : this->_shapeConstraints) {
+        constraint.projectToAuxiliaryVariable(this->_nodes);
+      }
+
       for (PositionConstraint& constraint : this->_positionConstraints) {
         constraint.setupGlobalForceVector(this->_forceVector);
       }
@@ -233,6 +241,10 @@ void Solver::tickPD(float /*timestep*/) {
       }
 
       for (TetrahedralConstraint& constraint : this->_tetConstraints) {
+        constraint.setupGlobalForceVector(this->_forceVector);
+      }
+
+      for (ShapeMatchingConstraint& constraint : this->_shapeConstraints) {
         constraint.setupGlobalForceVector(this->_forceVector);
       }
 
@@ -325,6 +337,7 @@ void Solver::clear() {
   this->_nodes.clear();
   this->_distanceConstraints.clear();
   this->_tetConstraints.clear();
+  this->_shapeConstraints.clear();
   this->_tets.clear();
   this->_positionConstraints.clear();
   this->_vertices.clear();
