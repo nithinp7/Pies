@@ -75,10 +75,9 @@ void Solver::createTetBox(
         node.radius = 0.5f * scale;
         node.invMass = 1.0f / mass;
 
-        if (hinged && i == 0) {//} && j == 0) {
+        if (hinged && i == 0) { //} && j == 0) {
           this->_positionConstraints.push_back(
-              createPositionConstraint(this->_constraintId++, node,
-              stiffness));
+              createPositionConstraint(this->_constraintId++, node, stiffness));
         }
       }
     }
@@ -735,7 +734,93 @@ void Solver::createShapeMatchingBox(
   }
 
   this->_shapeConstraints.emplace_back(nodeIndices, materialCoords, w);
-  
+
+  this->_vertices.resize(this->_nodes.size());
+  for (size_t i = currentNodeCount; i < this->_nodes.size(); ++i) {
+    this->_vertices[i].position = this->_nodes[i].position;
+    this->_vertices[i].radius = this->_nodes[i].radius;
+    this->_vertices[i].baseColor = boxColor;
+    this->_vertices[i].roughness = boxRoughness;
+    this->_vertices[i].metallic = boxMetallic;
+  }
+
+  this->renderStateDirty = true;
+}
+
+namespace {
+struct ShapeMatchingPatch {
+  std::vector<glm::vec3> materialCoords;
+  std::vector<uint32_t> indices;
+};
+} // namespace
+
+void Solver::createShapeMatchingSheet(
+    const glm::vec3& translation,
+    float scale,
+    const glm::vec3& initialVelocity,
+    float w) {
+  Grid grid{50, 50, 1};
+
+  size_t currentNodeCount = this->_nodes.size();
+
+  glm::vec3 boxColor = randColor();
+  float boxRoughness = randf();
+  float boxMetallic = static_cast<float>(std::rand() % 2);
+
+  constexpr uint32_t patchWidth = 3;
+  constexpr uint32_t patchHeight = 3;
+  std::vector<ShapeMatchingPatch> patches(
+      (grid.width / patchWidth) * (grid.height / patchHeight));
+
+  for (ShapeMatchingPatch& patch : patches) {
+    patch.indices.reserve(patchWidth * patchHeight);
+    patch.materialCoords.reserve(patchWidth * patchHeight);
+  }
+
+  // Add nodes in a grid
+  this->_nodes.reserve(
+      currentNodeCount + grid.width * grid.height * grid.depth);
+  for (uint32_t i = 0; i < grid.width; ++i) {
+    for (uint32_t j = 0; j < grid.height; ++j) {
+      for (uint32_t k = 0; k < grid.depth; ++k) {
+        uint32_t nodeId = grid.gridIdToNodeId(currentNodeCount, {i, j, k});
+
+        Node& node = this->_nodes.emplace_back();
+        node.id = nodeId;
+        node.position = scale * glm::vec3(i, j, k) + translation;
+        node.prevPosition = node.position;
+        node.velocity = glm::vec3(0.0f);
+        node.radius = 0.5f * scale;
+        node.invMass = 1.0f;
+
+        uint32_t patchId = i / patchWidth * patchHeight + j / patchHeight;
+        patches[patchId].materialCoords.push_back(node.position);
+        patches[patchId].indices.push_back(nodeId);
+
+        if ((i % patchWidth) == (patchWidth - 1) && i < (grid.width - 1)) {
+          patchId = (1 + i / patchWidth) * patchHeight + j / patchHeight;
+          patches[patchId].materialCoords.push_back(node.position);
+          patches[patchId].indices.push_back(nodeId);
+        }
+
+        if ((j % patchHeight) == (patchHeight - 1) && j < (grid.height - 1)) {
+          patchId = i / patchWidth * patchHeight + j / patchHeight + 1;
+          patches[patchId].materialCoords.push_back(node.position);
+          patches[patchId].indices.push_back(nodeId);
+        }
+      }
+    }
+  }
+
+  this->_shapeConstraints.reserve(
+      this->_shapeConstraints.size() + patchWidth * patchHeight);
+  for (const ShapeMatchingPatch& patch : patches) {
+    this->_shapeConstraints.emplace_back(
+        patch.indices,
+        patch.materialCoords,
+        w);
+  }
+
   this->_vertices.resize(this->_nodes.size());
   for (size_t i = currentNodeCount; i < this->_nodes.size(); ++i) {
     this->_vertices[i].position = this->_nodes[i].position;

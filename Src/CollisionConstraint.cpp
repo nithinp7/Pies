@@ -24,19 +24,26 @@ CollisionConstraint::CollisionConstraint(
 void CollisionConstraint::setupCollisionMatrix(
     Eigen::SparseMatrix<float>& systemMatrix) const {
   systemMatrix.coeffRef(nodeIds[0], nodeIds[0]) += this->w;
-  systemMatrix.coeffRef(nodeIds[1], nodeIds[1]) += this->w;
+  systemMatrix.coeffRef(nodeIds[1], nodeIds[1]) += this->w;  
 }
 
 void CollisionConstraint::setupGlobalForceVector(
-    Eigen::MatrixXf& forceVector) const {
+    Eigen::MatrixXf& forceVector,
+    uint32_t threadId,
+    uint32_t threadCount) const {
   // TODO: Do we need to declar no alias for projectedPositions or nodeIds??
-  forceVector.coeffRef(nodeIds[0], 0) += this->w * projectedPositions[0].x;
-  forceVector.coeffRef(nodeIds[0], 1) += this->w * projectedPositions[0].y;
-  forceVector.coeffRef(nodeIds[0], 2) += this->w * projectedPositions[0].z;
 
-  forceVector.coeffRef(nodeIds[1], 0) += this->w * projectedPositions[1].x;
-  forceVector.coeffRef(nodeIds[1], 1) += this->w * projectedPositions[1].y;
-  forceVector.coeffRef(nodeIds[1], 2) += this->w * projectedPositions[1].z;
+  if (threadId == nodeIds[0] % threadCount) {
+    forceVector.coeffRef(nodeIds[0], 0) += this->w * projectedPositions[0].x;
+    forceVector.coeffRef(nodeIds[0], 1) += this->w * projectedPositions[0].y;
+    forceVector.coeffRef(nodeIds[0], 2) += this->w * projectedPositions[0].z;
+  }
+
+  if (threadId == nodeIds[1] % threadCount) {
+    forceVector.coeffRef(nodeIds[1], 0) += this->w * projectedPositions[1].x;
+    forceVector.coeffRef(nodeIds[1], 1) += this->w * projectedPositions[1].y;
+    forceVector.coeffRef(nodeIds[1], 2) += this->w * projectedPositions[1].z;
+  }
 }
 
 StaticCollisionConstraint::StaticCollisionConstraint(

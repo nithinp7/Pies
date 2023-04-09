@@ -14,11 +14,17 @@ ShapeMatchingConstraint::ShapeMatchingConstraint(
       _w(w) {
   size_t vertexCount = materialCoordinates.size();
 
-  for (size_t i = 0; i < materialCoordinates.size(); ++i) {
+  glm::vec3 centerOfMass(0.0f);
+  float weight = 1.0f / static_cast<float>(vertexCount);
+  for (const glm::vec3& coord : materialCoordinates) {
+    centerOfMass += weight * coord;
+  }
+
+  for (size_t i = 0; i < vertexCount; ++i) {
     const glm::vec3& coordinate = materialCoordinates[i];
-    this->_materialCoordinates.coeffRef(0, i) = coordinate.x;
-    this->_materialCoordinates.coeffRef(1, i) = coordinate.y;
-    this->_materialCoordinates.coeffRef(2, i) = coordinate.z;
+    this->_materialCoordinates.coeffRef(0, i) = coordinate.x - centerOfMass.x;
+    this->_materialCoordinates.coeffRef(1, i) = coordinate.y - centerOfMass.y;
+    this->_materialCoordinates.coeffRef(2, i) = coordinate.z - centerOfMass.z;
   }
 }
 
@@ -47,12 +53,18 @@ void ShapeMatchingConstraint::setupGlobalForceVector(
 
 void ShapeMatchingConstraint::projectToAuxiliaryVariable(
     const std::vector<Node>& nodes) {
+  glm::vec3 centerOfMass(0.0f);
+  float weight = 1.0f / static_cast<float>(this->_nodeIndices.size());
+  for (uint32_t nodeId : this->_nodeIndices) {
+    centerOfMass += weight * nodes[nodeId].position;
+  }
+
   for (uint32_t i = 0; i < this->_nodeIndices.size(); ++i) {
     uint32_t nodeId = this->_nodeIndices[i];
     const glm::vec3& currentPosition = nodes[nodeId].position;
-    this->_currentPositions.coeffRef(0, i) = currentPosition.x;
-    this->_currentPositions.coeffRef(1, i) = currentPosition.y;
-    this->_currentPositions.coeffRef(2, i) = currentPosition.z;
+    this->_currentPositions.coeffRef(0, i) = currentPosition.x - centerOfMass.x;
+    this->_currentPositions.coeffRef(1, i) = currentPosition.y - centerOfMass.y;
+    this->_currentPositions.coeffRef(2, i) = currentPosition.z - centerOfMass.z;
   }
 
   Eigen::Matrix4f T = Eigen::umeyama(
@@ -60,8 +72,9 @@ void ShapeMatchingConstraint::projectToAuxiliaryVariable(
       this->_currentPositions,
       false);
   Eigen::Matrix3f R = T.block(0, 0, 3, 3);
-  Eigen::Vector3f t = T.block(0, 3, 3, 1);
+  Eigen::Vector3f t(centerOfMass.x, centerOfMass.y, centerOfMass.z);//T.block(0, 3, 3, 1);
 
-  this->_projectedPositions = (R * this->_materialCoordinates).colwise() + t;
+  this->_projectedPositions.noalias() =
+      (R * this->_materialCoordinates).colwise() + t;
 }
 } // namespace Pies

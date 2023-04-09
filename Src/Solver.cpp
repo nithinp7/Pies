@@ -3,7 +3,6 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <cstdint>
-#include <thread>
 
 namespace Pies {
 
@@ -12,6 +11,12 @@ Solver::Solver(const SolverOptions& options)
       _spatialHashNodes(glm::vec3(0.0f), options.gridSpacing),
       _spatialHashTets(glm::vec3(0.0f), options.gridSpacing) {
   this->_threadData.resize(this->_options.threadCount);
+}
+
+Solver::~Solver() {
+  if (this->_clearSpatialHashThread.joinable()) {
+    this->_clearSpatialHashThread.join();
+  }
 }
 
 void Solver::tick(float timestep) {
@@ -228,9 +233,32 @@ void Solver::tickPD(float /*timestep*/) {
         constraint.projectToAuxiliaryVariable(this->_nodes);
       }
 
-      for (ShapeMatchingConstraint& constraint : this->_shapeConstraints) {
-        constraint.projectToAuxiliaryVariable(this->_nodes);
+      auto fnProjectShape = [this](uint32_t threadId) {
+        uint32_t count = this->_shapeConstraints.size() / 12;
+        uint32_t offset = count * threadId;
+        if (threadId == 11) {
+          count = this->_shapeConstraints.size() - offset;
+        }
+
+        for (uint32_t i = offset;
+             i < this->_shapeConstraints.size() && i < offset + count;
+             ++i) {
+          this->_shapeConstraints[i].projectToAuxiliaryVariable(this->_nodes);
+        }
+      };
+
+      std::thread threads[12];
+      for (uint32_t i = 0; i < 12; ++i) {
+        threads[i] = std::thread(fnProjectShape, i);
       }
+
+      for (std::thread& thread : threads) {
+        thread.join();
+      }
+
+      // for (ShapeMatchingConstraint& constraint : this->_shapeConstraints) {
+      //   constraint.projectToAuxiliaryVariable(this->_nodes);
+      // }
 
       for (PositionConstraint& constraint : this->_positionConstraints) {
         constraint.setupGlobalForceVector(this->_forceVector);
@@ -409,7 +437,7 @@ void Solver::_computeCollisions() {
 
   for (CollisionConstraint& collision : this->_collisions) {
     collision.setupCollisionMatrix(this->_collisionMatrix);
-    collision.setupGlobalForceVector(this->_forceVector);
+    collision.setupGlobalForceVector(this->_forceVector, 0, 1);
   }
 
   for (StaticCollisionConstraint& collision : this->_staticCollisions) {
@@ -425,7 +453,10 @@ void Solver::_parallelComputeCollisions() {
   this->_collisionMatrix.setZero();
   this->_stiffnessAndCollisionMatrix.setZero();
 
-  this->_spatialHashNodes.clear();
+  if (this->_clearSpatialHashThread.joinable()) {
+    this->_clearSpatialHashThread.join();
+  }
+
   this->_spatialHashNodes.parallelBulkInsert(this->_nodes, {});
 
   // Detect and resolve collisions
@@ -455,12 +486,15 @@ void Solver::_parallelComputeCollisions() {
           }
 
           glm::vec3 diff = pOtherNode->position - node.position;
-          float dist = glm::length(diff);
-          float dispLength = node.radius + pOtherNode->radius - dist;
-
-          if (dispLength <= 0.0f) {
+          float distSq = glm::dot(diff, diff);
+          float r = node.radius + pOtherNode->radius;
+          float rSq = r * r;
+          if (distSq >= rSq) {
             continue;
           }
+
+          float dist = sqrt(distSq);
+          float dispLength = node.radius + pOtherNode->radius - dist;
 
           glm::vec3 disp;
           if (dist > 0.00001f) {
@@ -494,11 +528,36 @@ void Solver::_parallelComputeCollisions() {
     thread.join();
   }
 
+  this->_clearSpatialHashThread =
+      std::thread([this]() { this->_spatialHashNodes.clear(); });
+
+  // Parallelize the setup of dynamic collision matrix and global force vector.
+  // We assign each thread to all nodes with the same nodeId % threadCount.
+  /*auto fnSetupCollision = [this](uint32_t threadId) {
+    for (const ThreadData& data : this->_threadData) {
+      for (const CollisionConstraint& collision : data.collisions) {
+        collision.setupGlobalForceVector(
+            this->_forceVector,
+            threadId,
+            this->_options.threadCount);
+      }
+    }
+  };
+
+  for (uint32_t threadId = 0; threadId < this->_options.threadCount;
+       ++threadId) {
+    threads[threadId] = std::thread(fnSetupCollision, threadId);
+  }
+
+  for (std::thread& thread : threads) {
+    thread.join();
+  }*/
+
   // Aggregate across per-thread results
   for (const ThreadData& data : this->_threadData) {
     for (const CollisionConstraint& collision : data.collisions) {
+      collision.setupGlobalForceVector(this->_forceVector, 0, 1);
       collision.setupCollisionMatrix(this->_collisionMatrix);
-      collision.setupGlobalForceVector(this->_forceVector);
       this->_collisions.push_back(collision);
     }
 

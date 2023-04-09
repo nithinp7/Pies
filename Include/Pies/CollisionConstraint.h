@@ -11,7 +11,7 @@
 namespace Pies {
 // Generalize to different types of collision
 struct CollisionConstraint {
-  float w = 10000.0f;
+  float w = 100000.0f;
   uint32_t nodeIds[2];
   glm::vec3 projectedPositions[2];
   glm::vec3 n;
@@ -21,7 +21,10 @@ struct CollisionConstraint {
   void
   setupCollisionMatrix(Eigen::SparseMatrix<float>& systemMatrix) const;
 
-  void setupGlobalForceVector(Eigen::MatrixXf& forceVector) const;
+  void setupGlobalForceVector(
+      Eigen::MatrixXf& forceVector,
+      uint32_t threadId,
+      uint32_t threadCount) const;
 };
 
 struct StaticCollisionConstraint {

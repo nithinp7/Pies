@@ -102,7 +102,7 @@ public:
       const TCompRange& compRangeFn) {
     // NOTE: Based on example given in:
     // https://greg7mdp.github.io/parallel-hashmap/
-    constexpr size_t numThreads = 8; // has to be a power of two
+    constexpr size_t numThreads = 16; // has to be a power of two
     std::unique_ptr<std::thread> threads[numThreads];
     auto threadFn = [&grid = this->_grid,
                      &hash = this->_hashMap,

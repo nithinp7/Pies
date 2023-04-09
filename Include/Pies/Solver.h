@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <memory>
 #include <vector>
+#include <thread>
 
 namespace Pies {
 enum class SolverName { PBD, PD };
@@ -25,10 +26,10 @@ struct SolverOptions {
   float gravity = 10.0f;
   float damping = 0.0005f;
   float friction = 0.05f;
-  float staticFrictionThreshold = 0.0f;
+  float staticFrictionThreshold = 0.1f;
   float floorHeight = 0.0f;
   float gridSpacing = 1.0f;
-  uint32_t threadCount = 12;
+  uint32_t threadCount = 16;
   SolverName solver = SolverName::PD;
 };
 
@@ -48,6 +49,10 @@ public:
 
   Solver() = default;
   Solver(const SolverOptions& options);
+  Solver(Solver&& rhs) = default;
+  Solver& operator=(Solver&& rhs) = default;
+
+  ~Solver();
 
   void tick(float deltaTime);
   void tickPBD(float deltaTime);
@@ -79,6 +84,11 @@ public:
       uint32_t countX,
       uint32_t countY,
       uint32_t countZ,
+      float scale,
+      const glm::vec3& initialVelocity,
+      float w);
+  void createShapeMatchingSheet(
+      const glm::vec3& translation,
       float scale,
       const glm::vec3& initialVelocity,
       float w);
@@ -131,6 +141,8 @@ private:
 
   std::vector<CollisionConstraint> _collisions;
   std::vector<StaticCollisionConstraint> _staticCollisions;
+
+  std::thread _clearSpatialHashThread;
 
   // TODO: Seperate into individual buffers for each object??
   std::vector<uint32_t> _triangles;
