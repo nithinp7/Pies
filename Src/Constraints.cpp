@@ -20,7 +20,7 @@ void DistanceConstraintProjection::operator()(
     dir = diff / dist;
   }
 
-  float disp = glm::min(this->targetDistance - dist, 0.0f);
+  float disp = this->targetDistance - dist;//glm::min(this->targetDistance - dist, 0.0f);
 
   float wSum = a.invMass + b.invMass;
 

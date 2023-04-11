@@ -55,25 +55,54 @@ struct SpatialHashGridCellRange {
  * grid space and world space are provided.
  */
 struct SpatialHashGrid {
-  glm::vec3 translation;
   float scale;
 };
 
 template <typename TValue, typename TCompRange> class SpatialHash {
 public:
-  SpatialHash(
-      const glm::vec3& translation = glm::vec3(0.0f),
-      float scale = 1.0f)
-      : _grid({translation, scale}) {}
+  SpatialHash(float scale = 1.0f) : _grid({scale}) {}
 
-  const SpatialHashGrid& getGrid() const {
-    return this->_grid;
+  const SpatialHashGrid& getGrid() const { return this->_grid; }
+
+  const SpatialHashGridCellBucket<TValue>*
+  findCollisions(const SpatialHashGridCellId& id) const {
+    // Compute its hash
+    size_t hashVal = this->_hashMap.hash(id);
+
+    auto it = this->_hashMap.find(id, hashVal);
+    if (it != this->_hashMap.end()) {
+      // Colliding cell has non-empty bucket
+      return &it->second;
+    }
+
+    return nullptr;
+  }
+
+  const SpatialHashGridCellBucket<TValue>*
+  findCollisions(const glm::vec3& position) const {
+
+    // Compute grid cell id
+    SpatialHashGridCellId id{
+        static_cast<int64_t>(position.x / this->_grid.scale),
+        static_cast<int64_t>(position.y / this->_grid.scale),
+        static_cast<int64_t>(position.z / this->_grid.scale)};
+    // Compute its hash
+    size_t hashVal = this->_hashMap.hash(id);
+
+    auto it = this->_hashMap.find(id, hashVal);
+    if (it != this->_hashMap.end()) {
+      // Colliding cell has non-empty bucket
+      return &it->second;
+    }
+
+    return nullptr;
   }
 
   void findCollisions(
-      const TValue& value, 
+      const TValue& value,
       const TCompRange& compRangeFn,
-      std::vector<const SpatialHashGridCellBucket<TValue>*>& collidingBuckets) const {
+      std::vector<const SpatialHashGridCellBucket<TValue>*>& collidingBuckets)
+      const {
     SpatialHashGridCellRange range = compRangeFn(value, this->_grid);
 
     for (uint32_t dx = 0; dx < range.lengthX; ++dx) {
@@ -86,7 +115,7 @@ public:
               range.minZ + dz};
           // Compute its hash
           size_t hashVal = this->_hashMap.hash(id);
-          
+
           auto it = this->_hashMap.find(id, hashVal);
           if (it != this->_hashMap.end()) {
             // Colliding cell has non-empty bucket

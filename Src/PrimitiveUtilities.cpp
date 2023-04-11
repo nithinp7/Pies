@@ -72,7 +72,7 @@ void Solver::createTetBox(
         node.position = scale * glm::vec3(i, j, k) + translation;
         node.prevPosition = node.position;
         node.velocity = initialVelocity;
-        node.radius = 0.5f * scale;
+        node.radius = 0.95f * 0.5f * scale;
         node.invMass = 1.0f / mass;
 
         if (hinged && i == 0) { //} && j == 0) {
@@ -191,102 +191,84 @@ void Solver::createTetBox(
   for (uint32_t i = 0; i < grid.width - 1; ++i) {
     for (uint32_t j = 0; j < grid.height - 1; ++j) {
       this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i, j, 0}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i + 1, j, 0}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i + 1, j + 1, 0}));
+          {grid.gridIdToNodeId(currentNodeCount, {i, j, 0}),
+           grid.gridIdToNodeId(currentNodeCount, {i + 1, j, 0}),
+           grid.gridIdToNodeId(currentNodeCount, {i + 1, j + 1, 0})});
 
       this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i, j, 0}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i + 1, j + 1, 0}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i, j + 1, 0}));
+          {grid.gridIdToNodeId(currentNodeCount, {i, j, 0}),
+           grid.gridIdToNodeId(currentNodeCount, {i + 1, j + 1, 0}),
+           grid.gridIdToNodeId(currentNodeCount, {i, j + 1, 0})});
 
       this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i, j, grid.depth - 1}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i + 1, j, grid.depth - 1}));
-      this->_triangles.push_back(grid.gridIdToNodeId(
-          currentNodeCount,
-          {i + 1, j + 1, grid.depth - 1}));
+          {grid.gridIdToNodeId(currentNodeCount, {i, j, grid.depth - 1}),
+           grid.gridIdToNodeId(currentNodeCount, {i + 1, j, grid.depth - 1}),
+           grid.gridIdToNodeId(
+               currentNodeCount,
+               {i + 1, j + 1, grid.depth - 1})});
 
       this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i, j, grid.depth - 1}));
-      this->_triangles.push_back(grid.gridIdToNodeId(
-          currentNodeCount,
-          {i + 1, j + 1, grid.depth - 1}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i, j + 1, grid.depth - 1}));
+          {grid.gridIdToNodeId(currentNodeCount, {i, j, grid.depth - 1}),
+           grid.gridIdToNodeId(
+               currentNodeCount,
+               {i + 1, j + 1, grid.depth - 1}),
+           grid.gridIdToNodeId(currentNodeCount, {i, j + 1, grid.depth - 1})});
     }
   }
 
   for (uint32_t i = 0; i < grid.width - 1; ++i) {
     for (uint32_t k = 0; k < grid.depth - 1; ++k) {
       this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i, 0, k}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i + 1, 0, k}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i + 1, 0, k + 1}));
+          {grid.gridIdToNodeId(currentNodeCount, {i, 0, k}),
+           grid.gridIdToNodeId(currentNodeCount, {i + 1, 0, k}),
+           grid.gridIdToNodeId(currentNodeCount, {i + 1, 0, k + 1})});
 
       this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i, 0, k}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i + 1, 0, k + 1}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i, 0, k + 1}));
+          {grid.gridIdToNodeId(currentNodeCount, {i, 0, k}),
+           grid.gridIdToNodeId(currentNodeCount, {i + 1, 0, k + 1}),
+           grid.gridIdToNodeId(currentNodeCount, {i, 0, k + 1})});
 
       this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i, grid.height - 1, k}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i + 1, grid.height - 1, k}));
-      this->_triangles.push_back(grid.gridIdToNodeId(
-          currentNodeCount,
-          {i + 1, grid.height - 1, k + 1}));
+          {grid.gridIdToNodeId(currentNodeCount, {i, grid.height - 1, k}),
+           grid.gridIdToNodeId(currentNodeCount, {i + 1, grid.height - 1, k}),
+           grid.gridIdToNodeId(
+               currentNodeCount,
+               {i + 1, grid.height - 1, k + 1})});
 
       this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i, grid.height - 1, k}));
-      this->_triangles.push_back(grid.gridIdToNodeId(
-          currentNodeCount,
-          {i + 1, grid.height - 1, k + 1}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i, grid.height - 1, k + 1}));
+          {grid.gridIdToNodeId(currentNodeCount, {i, grid.height - 1, k}),
+           grid.gridIdToNodeId(
+               currentNodeCount,
+               {i + 1, grid.height - 1, k + 1}),
+           grid.gridIdToNodeId(currentNodeCount, {i, grid.height - 1, k + 1})});
     }
   }
 
   for (uint32_t j = 0; j < grid.height - 1; ++j) {
     for (uint32_t k = 0; k < grid.depth - 1; ++k) {
       this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {0, j, k}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {0, j + 1, k}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {0, j + 1, k + 1}));
+          {grid.gridIdToNodeId(currentNodeCount, {0, j, k}),
+           grid.gridIdToNodeId(currentNodeCount, {0, j + 1, k}),
+           grid.gridIdToNodeId(currentNodeCount, {0, j + 1, k + 1})});
 
       this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {0, j, k}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {0, j + 1, k + 1}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {0, j, k + 1}));
+          {grid.gridIdToNodeId(currentNodeCount, {0, j, k}),
+           grid.gridIdToNodeId(currentNodeCount, {0, j + 1, k + 1}),
+           grid.gridIdToNodeId(currentNodeCount, {0, j, k + 1})});
 
       this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {grid.width - 1, j, k}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {grid.width - 1, j + 1, k}));
-      this->_triangles.push_back(grid.gridIdToNodeId(
-          currentNodeCount,
-          {grid.width - 1, j + 1, k + 1}));
+          {grid.gridIdToNodeId(currentNodeCount, {grid.width - 1, j, k}),
+           grid.gridIdToNodeId(currentNodeCount, {grid.width - 1, j + 1, k}),
+           grid.gridIdToNodeId(
+               currentNodeCount,
+               {grid.width - 1, j + 1, k + 1})});
 
       this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {grid.width - 1, j, k}));
-      this->_triangles.push_back(grid.gridIdToNodeId(
-          currentNodeCount,
-          {grid.width - 1, j + 1, k + 1}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {grid.width - 1, j, k + 1}));
+          {grid.gridIdToNodeId(currentNodeCount, {grid.width - 1, j, k}),
+           grid.gridIdToNodeId(
+               currentNodeCount,
+               {grid.width - 1, j + 1, k + 1}),
+           grid.gridIdToNodeId(currentNodeCount, {grid.width - 1, j, k + 1})});
     }
   }
 
@@ -422,102 +404,85 @@ void Solver::createBox(
   for (uint32_t i = 0; i < grid.width - 1; ++i) {
     for (uint32_t j = 0; j < grid.height - 1; ++j) {
       this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i, j, 0}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i + 1, j, 0}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i + 1, j + 1, 0}));
+          {grid.gridIdToNodeId(currentNodeCount, {i, j, 0}),
+           grid.gridIdToNodeId(currentNodeCount, {i + 1, j, 0}),
+           grid.gridIdToNodeId(currentNodeCount, {i + 1, j + 1, 0})});
 
       this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i, j, 0}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i + 1, j + 1, 0}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i, j + 1, 0}));
+          {grid.gridIdToNodeId(currentNodeCount, {i, j, 0}),
+           grid.gridIdToNodeId(currentNodeCount, {i + 1, j + 1, 0}),
+           grid.gridIdToNodeId(currentNodeCount, {i, j + 1, 0})});
 
       this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i, j, grid.depth - 1}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i + 1, j, grid.depth - 1}));
-      this->_triangles.push_back(grid.gridIdToNodeId(
-          currentNodeCount,
-          {i + 1, j + 1, grid.depth - 1}));
+          {grid.gridIdToNodeId(currentNodeCount, {i, j, grid.depth - 1}),
+           grid.gridIdToNodeId(currentNodeCount, {i + 1, j, grid.depth - 1}),
+           grid.gridIdToNodeId(
+               currentNodeCount,
+               {i + 1, j + 1, grid.depth - 1})});
 
       this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i, j, grid.depth - 1}));
-      this->_triangles.push_back(grid.gridIdToNodeId(
-          currentNodeCount,
-          {i + 1, j + 1, grid.depth - 1}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i, j + 1, grid.depth - 1}));
+          {grid.gridIdToNodeId(currentNodeCount, {i, j, grid.depth - 1}),
+           grid.gridIdToNodeId(
+               currentNodeCount,
+               {i + 1, j + 1, grid.depth - 1}),
+           grid.gridIdToNodeId(currentNodeCount, {i, j + 1, grid.depth - 1})});
     }
   }
 
   for (uint32_t i = 0; i < grid.width - 1; ++i) {
     for (uint32_t k = 0; k < grid.depth - 1; ++k) {
       this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i, 0, k}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i + 1, 0, k}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i + 1, 0, k + 1}));
+          {grid.gridIdToNodeId(currentNodeCount, {i, 0, k}),
+           grid.gridIdToNodeId(currentNodeCount, {i + 1, 0, k}),
+           grid.gridIdToNodeId(currentNodeCount, {i + 1, 0, k + 1})});
 
       this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i, 0, k}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i + 1, 0, k + 1}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i, 0, k + 1}));
+          {grid.gridIdToNodeId(currentNodeCount, {i, 0, k}),
+           grid.gridIdToNodeId(currentNodeCount, {i + 1, 0, k + 1}),
+           grid.gridIdToNodeId(currentNodeCount, {i, 0, k + 1})});
 
       this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i, grid.height - 1, k}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i + 1, grid.height - 1, k}));
-      this->_triangles.push_back(grid.gridIdToNodeId(
-          currentNodeCount,
-          {i + 1, grid.height - 1, k + 1}));
+          {grid.gridIdToNodeId(currentNodeCount, {i, grid.height - 1, k}),
+           grid.gridIdToNodeId(currentNodeCount, {i + 1, grid.height - 1, k}),
+           grid.gridIdToNodeId(
+               currentNodeCount,
+               {i + 1, grid.height - 1, k + 1})});
 
       this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i, grid.height - 1, k}));
-      this->_triangles.push_back(grid.gridIdToNodeId(
-          currentNodeCount,
-          {i + 1, grid.height - 1, k + 1}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i, grid.height - 1, k + 1}));
+          {grid.gridIdToNodeId(currentNodeCount, {i, grid.height - 1, k}),
+           grid.gridIdToNodeId(
+               currentNodeCount,
+               {i + 1, grid.height - 1, k + 1}),
+
+           grid.gridIdToNodeId(currentNodeCount, {i, grid.height - 1, k + 1})});
     }
   }
 
   for (uint32_t j = 0; j < grid.height - 1; ++j) {
     for (uint32_t k = 0; k < grid.depth - 1; ++k) {
       this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {0, j, k}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {0, j + 1, k}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {0, j + 1, k + 1}));
+          {grid.gridIdToNodeId(currentNodeCount, {0, j, k}),
+           grid.gridIdToNodeId(currentNodeCount, {0, j + 1, k}),
+           grid.gridIdToNodeId(currentNodeCount, {0, j + 1, k + 1})});
 
       this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {0, j, k}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {0, j + 1, k + 1}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {0, j, k + 1}));
+          {grid.gridIdToNodeId(currentNodeCount, {0, j, k}),
+           grid.gridIdToNodeId(currentNodeCount, {0, j + 1, k + 1}),
+           grid.gridIdToNodeId(currentNodeCount, {0, j, k + 1})});
 
       this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {grid.width - 1, j, k}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {grid.width - 1, j + 1, k}));
-      this->_triangles.push_back(grid.gridIdToNodeId(
-          currentNodeCount,
-          {grid.width - 1, j + 1, k + 1}));
+          {grid.gridIdToNodeId(currentNodeCount, {grid.width - 1, j, k}),
+           grid.gridIdToNodeId(currentNodeCount, {grid.width - 1, j + 1, k}),
+           grid.gridIdToNodeId(
+               currentNodeCount,
+               {grid.width - 1, j + 1, k + 1})});
 
       this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {grid.width - 1, j, k}));
-      this->_triangles.push_back(grid.gridIdToNodeId(
-          currentNodeCount,
-          {grid.width - 1, j + 1, k + 1}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {grid.width - 1, j, k + 1}));
+          {grid.gridIdToNodeId(currentNodeCount, {grid.width - 1, j, k}),
+           grid.gridIdToNodeId(
+               currentNodeCount,
+               {grid.width - 1, j + 1, k + 1}),
+           grid.gridIdToNodeId(currentNodeCount, {grid.width - 1, j, k + 1})});
     }
   }
 
@@ -557,7 +522,7 @@ void Solver::createSheet(
     float scale,
     float mass,
     float stiffness) {
-  Grid grid{12, 12, 1};
+  Grid grid{16, 16, 1};
 
   size_t currentNodeCount = this->_nodes.size();
   size_t currentDistConstraintsCount = this->_distanceConstraints.size();
@@ -582,7 +547,7 @@ void Solver::createSheet(
       node.radius = 0.5f * scale;
       node.invMass = 1.0f / mass;
 
-      if (i == 0 || i == (grid.width - 1)) {
+      if (i == 0 || i == (grid.width - 1) || j == 0 || j == (grid.height - 1)) {
         this->_positionConstraints.push_back(
             createPositionConstraint(this->_constraintId++, node, stiffness));
       }
@@ -639,18 +604,14 @@ void Solver::createSheet(
   for (uint32_t i = 0; i < grid.width - 1; ++i) {
     for (uint32_t j = 0; j < grid.height - 1; ++j) {
       this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i, j, 0}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i + 1, j, 0}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i + 1, j + 1, 0}));
+          {grid.gridIdToNodeId(currentNodeCount, {i, j, 0}),
+           grid.gridIdToNodeId(currentNodeCount, {i + 1, j, 0}),
+           grid.gridIdToNodeId(currentNodeCount, {i + 1, j + 1, 0})});
 
       this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i, j, 0}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i + 1, j + 1, 0}));
-      this->_triangles.push_back(
-          grid.gridIdToNodeId(currentNodeCount, {i, j + 1, 0}));
+          {grid.gridIdToNodeId(currentNodeCount, {i, j, 0}),
+           grid.gridIdToNodeId(currentNodeCount, {i + 1, j + 1, 0}),
+           grid.gridIdToNodeId(currentNodeCount, {i, j + 1, 0})});
     }
   }
 
@@ -695,6 +656,8 @@ void Solver::createShapeMatchingBox(
     float w) {
   Grid grid{countX, countY, countZ};
 
+  scale = 0.5f;
+
   size_t currentNodeCount = this->_nodes.size();
 
   glm::vec3 boxColor = randColor();
@@ -715,7 +678,7 @@ void Solver::createShapeMatchingBox(
         node.prevPosition = node.position;
         node.velocity = glm::vec3(0.0f);
         node.radius = 0.5f * scale;
-        node.invMass = 1.0f;
+        node.invMass = 1.0f /10.0f;
 
         // if (i == 0 && j == 0) {
         //   this->_positionConstraints.push_back(

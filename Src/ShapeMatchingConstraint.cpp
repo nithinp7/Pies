@@ -72,7 +72,8 @@ void ShapeMatchingConstraint::projectToAuxiliaryVariable(
       this->_currentPositions,
       false);
   Eigen::Matrix3f R = T.block(0, 0, 3, 3);
-  Eigen::Vector3f t(centerOfMass.x, centerOfMass.y, centerOfMass.z);//T.block(0, 3, 3, 1);
+  Eigen::Vector3f t(centerOfMass.x, centerOfMass.y, centerOfMass.z);
+  t += T.block(0, 3, 3, 1);
 
   this->_projectedPositions.noalias() =
       (R * this->_materialCoordinates).colwise() + t;

@@ -8,8 +8,9 @@ namespace Pies {
 
 Solver::Solver(const SolverOptions& options)
     : _options(options),
-      _spatialHashNodes(glm::vec3(0.0f), options.gridSpacing),
-      _spatialHashTets(glm::vec3(0.0f), options.gridSpacing) {
+      _spatialHashNodes(options.gridSpacing),
+      _spatialHashTets(options.gridSpacing),
+      _spatialHashTris(options.gridSpacing) {
   this->_threadData.resize(this->_options.threadCount);
 }
 
@@ -233,32 +234,9 @@ void Solver::tickPD(float /*timestep*/) {
         constraint.projectToAuxiliaryVariable(this->_nodes);
       }
 
-      auto fnProjectShape = [this](uint32_t threadId) {
-        uint32_t count = this->_shapeConstraints.size() / 12;
-        uint32_t offset = count * threadId;
-        if (threadId == 11) {
-          count = this->_shapeConstraints.size() - offset;
-        }
-
-        for (uint32_t i = offset;
-             i < this->_shapeConstraints.size() && i < offset + count;
-             ++i) {
-          this->_shapeConstraints[i].projectToAuxiliaryVariable(this->_nodes);
-        }
-      };
-
-      std::thread threads[12];
-      for (uint32_t i = 0; i < 12; ++i) {
-        threads[i] = std::thread(fnProjectShape, i);
+      for (ShapeMatchingConstraint& constraint : this->_shapeConstraints) {
+        constraint.projectToAuxiliaryVariable(this->_nodes);
       }
-
-      for (std::thread& thread : threads) {
-        thread.join();
-      }
-
-      // for (ShapeMatchingConstraint& constraint : this->_shapeConstraints) {
-      //   constraint.projectToAuxiliaryVariable(this->_nodes);
-      // }
 
       for (PositionConstraint& constraint : this->_positionConstraints) {
         constraint.setupGlobalForceVector(this->_forceVector);
@@ -277,14 +255,15 @@ void Solver::tickPD(float /*timestep*/) {
       }
 
       // this->_computeCollisions();
-      this->_parallelComputeCollisions();
+      // this->_parallelComputeCollisions();
+      // this->_parallelPointTriangleCollisions();
 
-      this->_stiffnessAndCollisionMatrix =
-          this->_stiffnessMatrix + this->_collisionMatrix;
+      // this->_stiffnessAndCollisionMatrix =
+      //     this->_stiffnessMatrix + this->_collisionMatrix;
       // TODO: Just for testing, don't solve collision this way.
-      this->_pLltDecomp =
-          std::make_unique<Eigen::SimplicialLLT<Eigen::SparseMatrix<float>>>(
-              this->_stiffnessAndCollisionMatrix);
+      // this->_pLltDecomp =
+      //     std::make_unique<Eigen::SimplicialLLT<Eigen::SparseMatrix<float>>>(
+      //         this->_stiffnessAndCollisionMatrix);
 
       // Parallelize solving x,y,z coordinates
       // Note: Make sure to offset the starting node index of each thread
@@ -300,9 +279,38 @@ void Solver::tickPD(float /*timestep*/) {
         node.position.y = this->_stateVector.coeff(i, 1);
         node.position.z = this->_stateVector.coeff(i, 2);
       }
+    }
 
-      // float p; //???
-      // omega = 4.0 / (4.0 - p * p * omega);
+    // this->_parallelComputeCollisions();
+    this->_parallelPointTriangleCollisions();
+    for (uint32_t collisionIter = 0;
+         collisionIter < this->_options.collisionIterations;
+         ++collisionIter) {
+      // this->_parallelComputeCollisions();
+      // this->_parallelPointTriangleCollisions();
+      for (CollisionConstraint& collision : this->_collisions) {
+        collision.projectToAuxiliaryVariable(this->_nodes);
+        Node& nodeA = this->_nodes[collision.nodeIds[0]];
+        Node& nodeB = this->_nodes[collision.nodeIds[1]];
+        nodeA.position += this->_options.collionStiffness *
+                          (collision.projectedPositions[0] - nodeA.position);
+        nodeB.position += this->_options.collionStiffness *
+                          (collision.projectedPositions[1] - nodeB.position);
+      }
+
+      for (PointTriangleCollisionConstraint& collision : this->_triCollisions) {
+        collision.projectToAuxiliaryVariable(this->_nodes);
+        for (uint32_t i = 0; i < 4; ++i) {
+          Node& node = this->_nodes[collision.nodeIds[i]];
+          node.position += this->_options.collionStiffness *
+                           (collision.projectedPositions[i] - node.position);
+        }
+      }
+
+      for (StaticCollisionConstraint& collision : this->_staticCollisions) {
+        // TODO: stiffness
+        this->_nodes[collision.nodeId].position = collision.projectedPosition;
+      }
     }
 
     // Update node velocities
@@ -313,6 +321,7 @@ void Solver::tickPD(float /*timestep*/) {
 
       node.prevPosition = node.position;
       this->_vertices[i].position = node.position;
+      // this->_vertices[i].baseColor = glm::vec3(0.0f, 1.0f, 0.0f);
     }
 
     // Update friction
@@ -341,6 +350,49 @@ void Solver::tickPD(float /*timestep*/) {
 
       a.velocity += -friction * perpVel * a.invMass / wSum;
       b.velocity += friction * perpVel * b.invMass / wSum;
+
+      // this->_vertices[collision.nodeIds[0]].baseColor =
+      //     glm::vec3(1.0f, 0.0f, 0.0f);
+      // this->_vertices[collision.nodeIds[1]].baseColor =
+      //     glm::vec3(1.0f, 0.0f, 0.0f);
+    }
+
+    // Update friction
+    for (const PointTriangleCollisionConstraint& collision :
+         this->_triCollisions) {
+      if (!collision.colliding) {
+        continue;
+      }
+
+      Node& a = this->_nodes[collision.nodeIds[0]];
+      Node& b = this->_nodes[collision.nodeIds[1]];
+      Node& c = this->_nodes[collision.nodeIds[2]];
+      Node& d = this->_nodes[collision.nodeIds[3]];
+
+      glm::vec3 avgTriVelocity = (b.velocity + c.velocity + d.velocity) / 3.0f;
+
+      glm::vec3 n = glm::normalize(
+          glm::cross(c.position - b.position, d.position - b.position));
+
+      glm::vec3 relativeVelocity = a.velocity - avgTriVelocity;
+      glm::vec3 perpVel = relativeVelocity - glm::dot(relativeVelocity, n) * n;
+
+      float friction = -this->_options.friction;
+      if (glm::length(perpVel) < this->_options.staticFrictionThreshold) {
+        friction = 1.0f;
+      }
+
+      float wSum = a.invMass + b.invMass + c.invMass + d.invMass;
+
+      a.velocity += friction * perpVel * a.invMass / wSum;
+      b.velocity += -friction * perpVel * b.invMass / wSum;
+      c.velocity += -friction * perpVel * c.invMass / wSum;
+      d.velocity += -friction * perpVel * d.invMass / wSum;
+
+      // this->_vertices[collision.nodeIds[0]].baseColor =
+      //     glm::vec3(1.0f, 0.0f, 0.0f);
+      // this->_vertices[collision.nodeIds[1]].baseColor =
+      //     glm::vec3(1.0f, 0.0f, 0.0f);
     }
 
     for (const StaticCollisionConstraint& collision : this->_staticCollisions) {
@@ -380,6 +432,7 @@ void Solver::clear() {
 void Solver::_computeCollisions() {
   // Update collisions
   this->_collisions.clear();
+  this->_triCollisions.clear();
   this->_staticCollisions.clear();
   this->_collisionMatrix.setZero();
   this->_stiffnessAndCollisionMatrix.setZero();
@@ -400,49 +453,18 @@ void Solver::_computeCollisions() {
           continue;
         }
 
-        glm::vec3 diff = pOtherNode->position - node.position;
-        float dist = glm::length(diff);
-        float dispLength = node.radius + pOtherNode->radius - dist;
-
-        if (dispLength <= 0.0f) {
-          continue;
-        }
-
-        glm::vec3 disp;
-        if (dist > 0.00001f) {
-          disp = dispLength * diff / dist;
-        } else {
-          disp = glm::vec3(dispLength, 0.0f, 0.0f);
-        }
-
-        CollisionConstraint& collision =
-            this->_collisions.emplace_back(node, *pOtherNode, disp);
-        // collision.setupCollisionMatrix(this->_collisionMatrix);
-        // collision.setupGlobalForceVector(this->_forceVector);
+        this->_collisions.emplace_back(node, *pOtherNode);
       }
     }
 
     if (node.position.y - node.radius < this->_options.floorHeight) {
-      StaticCollisionConstraint& collision =
-          this->_staticCollisions.emplace_back(
-              node,
-              glm::vec3(
-                  node.position.x,
-                  this->_options.floorHeight + node.radius,
-                  node.position.z));
-      // collision.setupCollisionMatrix(this->_collisionMatrix);
-      // collision.setupGlobalForceVector(this->_forceVector);
+      this->_staticCollisions.emplace_back(
+          node,
+          glm::vec3(
+              node.position.x,
+              this->_options.floorHeight + node.radius,
+              node.position.z));
     }
-  }
-
-  for (CollisionConstraint& collision : this->_collisions) {
-    collision.setupCollisionMatrix(this->_collisionMatrix);
-    collision.setupGlobalForceVector(this->_forceVector, 0, 1);
-  }
-
-  for (StaticCollisionConstraint& collision : this->_staticCollisions) {
-    collision.setupCollisionMatrix(this->_collisionMatrix);
-    collision.setupGlobalForceVector(this->_forceVector);
   }
 }
 
@@ -485,25 +507,7 @@ void Solver::_parallelComputeCollisions() {
             continue;
           }
 
-          glm::vec3 diff = pOtherNode->position - node.position;
-          float distSq = glm::dot(diff, diff);
-          float r = node.radius + pOtherNode->radius;
-          float rSq = r * r;
-          if (distSq >= rSq) {
-            continue;
-          }
-
-          float dist = sqrt(distSq);
-          float dispLength = node.radius + pOtherNode->radius - dist;
-
-          glm::vec3 disp;
-          if (dist > 0.00001f) {
-            disp = dispLength * diff / dist;
-          } else {
-            disp = glm::vec3(dispLength, 0.0f, 0.0f);
-          }
-
-          data.collisions.emplace_back(node, *pOtherNode, disp);
+          data.collisions.emplace_back(node, *pOtherNode);
         }
       }
 
@@ -556,25 +560,29 @@ void Solver::_parallelComputeCollisions() {
   // Aggregate across per-thread results
   for (const ThreadData& data : this->_threadData) {
     for (const CollisionConstraint& collision : data.collisions) {
-      collision.setupGlobalForceVector(this->_forceVector, 0, 1);
-      collision.setupCollisionMatrix(this->_collisionMatrix);
+      // collision.setupGlobalForceVector(this->_forceVector, 0, 1);
+      // collision.setupCollisionMatrix(this->_collisionMatrix);
       this->_collisions.push_back(collision);
     }
 
     for (const StaticCollisionConstraint& collision : data.staticCollisions) {
-      collision.setupCollisionMatrix(this->_collisionMatrix);
-      collision.setupGlobalForceVector(this->_forceVector);
+      // collision.setupCollisionMatrix(this->_collisionMatrix);
+      // collision.setupGlobalForceVector(this->_forceVector);
       this->_staticCollisions.push_back(collision);
     }
   }
 }
 
-SpatialHashGridCellRange Solver::NodeCompRange::operator()(
-    const Node& node,
-    const SpatialHashGrid& grid) const {
-  float radiusPadding = 0.0f;
-  float gridLocalRadius = (node.radius + radiusPadding) / grid.scale;
-  glm::vec3 gridLocalPos = (node.position - grid.translation) / grid.scale;
+namespace {
+SpatialHashGridCellRange ccdRange(
+    const glm::vec3& prevPos,
+    const glm::vec3& pos,
+    const SpatialHashGrid& grid) {
+  float radius = 0.5f * glm::length(pos - prevPos);
+  glm::vec3 center = 0.5f * pos + 0.5f * prevPos;
+  float radiusPadding = 1.5f;
+  float gridLocalRadius = (radius + radiusPadding) / grid.scale;
+  glm::vec3 gridLocalPos = center / grid.scale;
   glm::vec3 gridLocalMin = gridLocalPos - glm::vec3(gridLocalRadius);
 
   SpatialHashGridCellRange range{};
@@ -583,7 +591,145 @@ SpatialHashGridCellRange Solver::NodeCompRange::operator()(
   range.minZ = static_cast<int64_t>(glm::floor(gridLocalMin.z));
 
   glm::vec3 adjustedDiameter =
-      glm::round(glm::fract(gridLocalMin) + glm::vec3(2 * gridLocalRadius));
+      glm::ceil(glm::fract(gridLocalMin) + glm::vec3(2 * gridLocalRadius));
+  range.lengthX = static_cast<uint32_t>(adjustedDiameter.r);
+  range.lengthY = static_cast<uint32_t>(adjustedDiameter.g);
+  range.lengthZ = static_cast<uint32_t>(adjustedDiameter.b);
+
+  if (range.lengthX > 100 || range.lengthY > 100 || range.lengthZ > 100) {
+    return {};
+  }
+
+  return range;
+}
+} // namespace
+
+void Solver::_parallelPointTriangleCollisions() {
+  // Update collisions
+  this->_collisions.clear();
+  this->_triCollisions.clear();
+  this->_staticCollisions.clear();
+  this->_collisionMatrix.setZero();
+  this->_stiffnessAndCollisionMatrix.setZero();
+
+  if (this->_clearSpatialHashThread.joinable()) {
+    this->_clearSpatialHashThread.join();
+  }
+
+  this->_spatialHashTris.parallelBulkInsert(this->_triangles, {this->_nodes});
+
+  // Detect and resolve collisions
+  auto fnComputeCollisions = [&nodes = this->_nodes,
+                              threadCount = this->_options.threadCount,
+                              &spatialHash = this->_spatialHashTris,
+                              &threadData = this->_threadData,
+                              floorHeight =
+                                  this->_options.floorHeight](size_t threadId) {
+    ThreadData& data = threadData[threadId];
+
+    std::vector<const SpatialHashGridCellBucket<Triangle>*> buckets;
+
+    data.collisions.clear();
+    data.triCollisions.clear();
+    data.staticCollisions.clear();
+
+    for (size_t nodeId = threadId; nodeId < nodes.size();
+         nodeId += threadCount) {
+      const Node& nodeA = nodes[nodeId];
+
+      SpatialHashGridCellRange range =
+          ccdRange(nodeA.prevPosition, nodeA.position, spatialHash.getGrid());
+
+      for (uint32_t dx = 0; dx < range.lengthX; ++dx) {
+        for (uint32_t dy = 0; dy < range.lengthY; ++dy) {
+          for (uint32_t dz = 0; dz < range.lengthZ; ++dz) {
+            // Compute grid cell id
+            SpatialHashGridCellId id{
+                range.minX + dx,
+                range.minY + dy,
+                range.minZ + dz};
+
+            const SpatialHashGridCellBucket<Triangle>* pBucket =
+                spatialHash.findCollisions(id);
+            if (pBucket) {
+              buckets.push_back(pBucket);
+            }
+          }
+        }
+      }
+
+      for (const SpatialHashGridCellBucket<Triangle>* pBucket : buckets) {
+        // Check all triangles in the bucket
+        for (const Triangle* pTriangle : pBucket->values) {
+          if (nodeId == pTriangle->nodeIds[0] ||
+              nodeId == pTriangle->nodeIds[1] ||
+              nodeId == pTriangle->nodeIds[2]) {
+            continue;
+          }
+
+          const Node& nodeB = nodes[pTriangle->nodeIds[0]];
+          const Node& nodeC = nodes[pTriangle->nodeIds[1]];
+          const Node& nodeD = nodes[pTriangle->nodeIds[2]];
+
+          data.triCollisions.emplace_back(nodeA, nodeB, nodeC, nodeD);
+        }
+      }
+
+      buckets.clear();
+
+      if (nodeA.position.y < floorHeight) {
+        data.staticCollisions.emplace_back(
+            nodeA,
+            glm::vec3(nodeA.position.x, floorHeight, nodeA.position.z));
+      }
+    }
+  };
+
+  std::vector<std::thread> threads;
+  for (uint32_t threadId = 0; threadId < this->_options.threadCount;
+       ++threadId) {
+    threads.emplace_back(fnComputeCollisions, threadId);
+  }
+
+  for (std::thread& thread : threads) {
+    thread.join();
+  }
+
+  this->_clearSpatialHashThread =
+      std::thread([this]() { this->_spatialHashTris.clear(); });
+
+  // Aggregate across per-thread results
+  for (const ThreadData& data : this->_threadData) {
+    for (const PointTriangleCollisionConstraint& collision :
+         data.triCollisions) {
+      // collision.setupGlobalForceVector(this->_forceVector);
+      // collision.setupCollisionMatrix(this->_collisionMatrix);
+      this->_triCollisions.push_back(collision);
+    }
+
+    for (const StaticCollisionConstraint& collision : data.staticCollisions) {
+      // collision.setupCollisionMatrix(this->_collisionMatrix);
+      // collision.setupGlobalForceVector(this->_forceVector);
+      this->_staticCollisions.push_back(collision);
+    }
+  }
+}
+
+SpatialHashGridCellRange Solver::NodeCompRange::operator()(
+    const Node& node,
+    const SpatialHashGrid& grid) const {
+  float radiusPadding = 0.5f;
+  float gridLocalRadius = (node.radius + radiusPadding) / grid.scale;
+  glm::vec3 gridLocalPos = node.position / grid.scale;
+  glm::vec3 gridLocalMin = gridLocalPos - glm::vec3(gridLocalRadius);
+
+  SpatialHashGridCellRange range{};
+  range.minX = static_cast<int64_t>(glm::floor(gridLocalMin.x));
+  range.minY = static_cast<int64_t>(glm::floor(gridLocalMin.y));
+  range.minZ = static_cast<int64_t>(glm::floor(gridLocalMin.z));
+
+  glm::vec3 adjustedDiameter =
+      glm::ceil(glm::fract(gridLocalMin) + glm::vec3(2 * gridLocalRadius));
   range.lengthX = static_cast<uint32_t>(adjustedDiameter.r);
   range.lengthY = static_cast<uint32_t>(adjustedDiameter.g);
   range.lengthZ = static_cast<uint32_t>(adjustedDiameter.b);
@@ -594,14 +740,10 @@ SpatialHashGridCellRange Solver::NodeCompRange::operator()(
 SpatialHashGridCellRange Solver::TetCompRange::operator()(
     const Tetrahedron& tet,
     const SpatialHashGrid& grid) const {
-  glm::vec3 x1 =
-      (nodes[tet.nodeIds[0]].position - grid.translation) / grid.scale;
-  glm::vec3 x2 =
-      (nodes[tet.nodeIds[1]].position - grid.translation) / grid.scale;
-  glm::vec3 x3 =
-      (nodes[tet.nodeIds[2]].position - grid.translation) / grid.scale;
-  glm::vec3 x4 =
-      (nodes[tet.nodeIds[3]].position - grid.translation) / grid.scale;
+  glm::vec3 x1 = nodes[tet.nodeIds[0]].position / grid.scale;
+  glm::vec3 x2 = nodes[tet.nodeIds[1]].position / grid.scale;
+  glm::vec3 x3 = nodes[tet.nodeIds[2]].position / grid.scale;
+  glm::vec3 x4 = nodes[tet.nodeIds[3]].position / grid.scale;
 
   glm::vec3 min(std::numeric_limits<float>::max());
   glm::vec3 max(std::numeric_limits<float>::lowest());
@@ -626,6 +768,35 @@ SpatialHashGridCellRange Solver::TetCompRange::operator()(
       static_cast<uint32_t>(
           glm::max(glm::max(glm::max(x1.z, x2.z), x3.z), x4.z) - range.minZ),
       1u);
+
+  return range;
+}
+
+SpatialHashGridCellRange Solver::TriCompRange::operator()(
+    const Triangle& triangle,
+    const SpatialHashGrid& grid) const {
+  glm::vec3 x1 = nodes[triangle.nodeIds[0]].position / grid.scale;
+  glm::vec3 x2 = nodes[triangle.nodeIds[1]].position / grid.scale;
+  glm::vec3 x3 = nodes[triangle.nodeIds[2]].position / grid.scale;
+
+  SpatialHashGridCellRange range{};
+  range.minX =
+      static_cast<int64_t>(glm::floor(glm::min(glm::min(x1.x, x2.x), x3.x)));
+  range.minY =
+      static_cast<int64_t>(glm::floor(glm::min(glm::min(x1.y, x2.y), x3.y)));
+  range.minZ =
+      static_cast<int64_t>(glm::floor(glm::min(glm::min(x1.z, x2.z), x3.z)));
+
+  range.lengthX = static_cast<uint32_t>(
+      glm::ceil(glm::max(glm::max(x1.x, x2.x), x3.x)) - range.minX);
+  range.lengthY = static_cast<uint32_t>(
+      glm::ceil(glm::max(glm::max(x1.y, x2.y), x3.y)) - range.minY);
+  range.lengthZ = static_cast<uint32_t>(
+      glm::ceil(glm::max(glm::max(x1.z, x2.z), x3.z)) - range.minZ);
+
+  if (range.lengthX > 50 || range.lengthY > 50 || range.lengthZ > 50) {
+    return {};
+  }
 
   return range;
 }
