@@ -2,6 +2,9 @@
 
 #include "Node.h"
 
+#include <Eigen/Core>
+#include <Eigen/Sparse>
+
 #include <array>
 #include <cstdint>
 #include <stdexcept>
@@ -23,11 +26,16 @@ protected:
   // A constant weight for this constraint.
   float _w = 1.0f;
 
-  // The constant matrix A.
-  // Matrix<NodeCount, NodeCount> _A;
+  // TODO: This should be defined by the templated constraint implementation,
+  // individual constraints do not need to differ wrt matrix A and B.
 
-  // The constant matrix B.
-  // Matrix<NodeCount, NodeCount> _B;
+  // TODO: This should be defined by the templated constraint implementation,
+  // individual constraints do not need to differ wrt matrix A and B.
+
+  // Precomputed values defining the energy potential for the constraint
+  // See the Projective Dynamics paper for more information about A and B.
+  Eigen::Matrix<float, NodeCount, NodeCount> _AtA;
+  Eigen::Matrix<float, NodeCount, NodeCount> _AtB;
 
   // A list of nodes involved in this constraint.
   std::array<uint32_t, NodeCount> _nodeIds;
@@ -41,9 +49,16 @@ public:
   Constraint(
       uint32_t id,
       float w,
+      const Eigen::Matrix<float, NodeCount, NodeCount>& A,
+      const Eigen::Matrix<float, NodeCount, NodeCount>& B,
       const TProjection& projection,
       const std::array<uint32_t, NodeCount>& nodeIds)
-      : _id(id), _w(w), _projection(std::move(projection)), _nodeIds(nodeIds) {}
+      : _id(id),
+        _w(w),
+        _AtA(A.transpose() * A),
+        _AtB(A.transpose() * B),
+        _projection(std::move(projection)),
+        _nodeIds(nodeIds) {}
 
   /**
    * @brief Initialize the constraint within the global stiffness matrix. Only
@@ -52,9 +67,18 @@ public:
    * @param stiffnessMatrix The global matrix describing the relationship
    * between nodal displacements and nodal forces.
    */
-  // void setupGlobalStiffnessMatrix(Matrix& systemMatrix) const {
-
-  // }
+  void
+  setupGlobalStiffnessMatrix(Eigen::SparseMatrix<float>& systemMatrix) const {
+    // Note: We only fill in the lower triangular part of the matrix.
+    for (uint32_t i = 0; i < NodeCount; ++i) {
+      uint32_t nodeId_i = this->_nodeIds[i];
+      for (uint32_t j = 0; j <= i; ++j) {
+        uint32_t nodeId_j = this->_nodeIds[j];
+        systemMatrix.coeffRef(nodeId_i, nodeId_j) +=
+            this->_w * this->_AtA.coeff(i, j);
+      }
+    }
+  }
 
   /**
    * @brief Add nodal forces due to this constraint to the global force vector.
@@ -62,9 +86,23 @@ public:
    *
    * @param forceVector The global vector of forces on each axis of each node.
    */
-  // void setupGlobalForceVector(Vector& forceVector) const {
+  void setupGlobalForceVector(Eigen::MatrixXf& forceVector) const {
+    // Set up projected nodes as eigen matrix
+    Eigen::Matrix<float, NodeCount, 3> p;
+    for (uint32_t i = 0; i < NodeCount; ++i) {
+      p.coeffRef(i, 0) = this->_projectedConfig[i].x;
+      p.coeffRef(i, 1) = this->_projectedConfig[i].y;
+      p.coeffRef(i, 2) = this->_projectedConfig[i].z;
+    }
 
-  // }
+    Eigen::Matrix<float, NodeCount, 3> AtBp = this->_AtB * p;
+    for (uint32_t i = 0; i < NodeCount; ++i) {
+      uint32_t nodeId_i = this->_nodeIds[i];
+      forceVector.coeffRef(nodeId_i, 0) += this->_w * AtBp.coeff(i, 0);
+      forceVector.coeffRef(nodeId_i, 1) += this->_w * AtBp.coeff(i, 1);
+      forceVector.coeffRef(nodeId_i, 2) += this->_w * AtBp.coeff(i, 2);
+    }
+  }
 
   /**
    * @brief Projects the current node configuration onto the constraint
@@ -112,7 +150,7 @@ struct DistanceConstraintProjection {
 };
 typedef Constraint<2, DistanceConstraintProjection> DistanceConstraint;
 DistanceConstraint
-createDistanceConstraint(uint32_t id, const Node& a, const Node& b);
+createDistanceConstraint(uint32_t id, const Node& a, const Node& b, float w);
 
 struct PositionConstraintProjection {
   glm::vec3 fixedPosition;
@@ -123,7 +161,7 @@ struct PositionConstraintProjection {
       std::array<glm::vec3, 1>& projected) const;
 };
 typedef Constraint<1, PositionConstraintProjection> PositionConstraint;
-PositionConstraint createPositionConstraint(uint32_t id, const Node& node);
+PositionConstraint createPositionConstraint(uint32_t id, const Node& node, float w);
 
 struct TetrahedralConstraintProjection {
   glm::mat3 Qinv;

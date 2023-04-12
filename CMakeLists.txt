@@ -39,7 +39,8 @@ target_include_directories (Pies
       Include
       Extern/glm
       Extern/tetgen
-      Extern/parallel-hashmap)
+      Extern/parallel-hashmap
+      Extern/eigen)
 
 target_link_libraries(${PROJECT_NAME} PUBLIC glm)
 target_link_libraries(${PROJECT_NAME} PUBLIC tetgen)

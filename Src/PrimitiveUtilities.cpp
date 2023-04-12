@@ -41,8 +41,14 @@ void Solver::createTetBox(
     const glm::vec3& translation,
     float scale,
     const glm::vec3& initialVelocity,
-    float stiffness) {
+    float stiffness,
+    float mass,
+    bool hinged) {
   Grid grid{3, 3, 3};
+
+  if (hinged) {
+    grid = Grid{15, 2, 2};
+  }
 
   size_t currentNodeCount = this->_nodes.size();
   size_t currentTetConstraintsCount = this->_tetConstraints.size();
@@ -67,12 +73,13 @@ void Solver::createTetBox(
         node.prevPosition = node.position;
         node.velocity = initialVelocity;
         node.radius = 0.5f * scale;
-        node.mass = 1.0f;
+        node.invMass = 1.0f / mass;
 
-        // if (i == 0 && j == 0) {
-        //   this->_positionConstraints.push_back(
-        //       createPositionConstraint(this->_constraintId++, &node));
-        // }
+        if (hinged && i == 0) {//} && j == 0) {
+          this->_positionConstraints.push_back(
+              createPositionConstraint(this->_constraintId++, node,
+              stiffness));
+        }
       }
     }
   }
@@ -325,7 +332,7 @@ void Solver::createBox(
         node.prevPosition = node.position;
         node.velocity = glm::vec3(0.0f);
         node.radius = 0.5f * scale;
-        node.mass = 1.0f;
+        node.invMass = 1.0f;
 
         // if (i == 0 && j == 0) {
         //   this->_positionConstraints.push_back(
@@ -360,21 +367,24 @@ void Solver::createBox(
           this->_distanceConstraints.push_back(createDistanceConstraint(
               this->_constraintId++,
               this->_nodes[node000],
-              this->_nodes[node100]));
+              this->_nodes[node100],
+              stiffness));
         }
 
         if (j < (grid.height - 1)) {
           this->_distanceConstraints.push_back(createDistanceConstraint(
               this->_constraintId++,
               this->_nodes[node000],
-              this->_nodes[node010]));
+              this->_nodes[node010],
+              stiffness));
         }
 
         if (k < (grid.depth - 1)) {
           this->_distanceConstraints.push_back(createDistanceConstraint(
               this->_constraintId++,
               this->_nodes[node000],
-              this->_nodes[node001]));
+              this->_nodes[node001],
+              stiffness));
         }
 
         // Long diagonal constraints
@@ -383,19 +393,23 @@ void Solver::createBox(
           this->_distanceConstraints.push_back(createDistanceConstraint(
               this->_constraintId++,
               this->_nodes[node000],
-              this->_nodes[node111]));
+              this->_nodes[node111],
+              stiffness));
           this->_distanceConstraints.push_back(createDistanceConstraint(
               this->_constraintId++,
               this->_nodes[node100],
-              this->_nodes[node011]));
+              this->_nodes[node011],
+              stiffness));
           this->_distanceConstraints.push_back(createDistanceConstraint(
               this->_constraintId++,
               this->_nodes[node010],
-              this->_nodes[node101]));
+              this->_nodes[node101],
+              stiffness));
           this->_distanceConstraints.push_back(createDistanceConstraint(
               this->_constraintId++,
               this->_nodes[node001],
-              this->_nodes[node110]));
+              this->_nodes[node110],
+              stiffness));
         }
       }
     }
@@ -508,12 +522,13 @@ void Solver::createBox(
     }
   }
 
-  for (size_t i = currentDistConstraintsCount;
-       i < this->_distanceConstraints.size();
-       ++i) {
-    this->_distanceConstraints[i].setWeight(
-        1.0f - powf(1.0f - stiffness, 1.0f / this->_options.iterations));
-  }
+  // TODO: This is only for PBD
+  // for (size_t i = currentDistConstraintsCount;
+  //      i < this->_distanceConstraints.size();
+  //      ++i) {
+  //   this->_distanceConstraints[i].setWeight(
+  //       1.0f - powf(1.0f - stiffness, 1.0f / this->_options.iterations));
+  // }
 
   this->_lines.reserve(
       currentLinesCount +
@@ -538,8 +553,12 @@ void Solver::createBox(
   this->renderStateDirty = true;
 }
 
-void Solver::createSheet(const glm::vec3& translation, float scale, float k) {
-  Grid grid{20, 20, 1};
+void Solver::createSheet(
+    const glm::vec3& translation,
+    float scale,
+    float mass,
+    float stiffness) {
+  Grid grid{12, 12, 1};
 
   size_t currentNodeCount = this->_nodes.size();
   size_t currentDistConstraintsCount = this->_distanceConstraints.size();
@@ -551,65 +570,73 @@ void Solver::createSheet(const glm::vec3& translation, float scale, float k) {
   float boxMetallic = static_cast<float>(std::rand() % 2);
 
   // Add nodes in a grid
-  this->_nodes.reserve(
-      currentNodeCount + grid.width * grid.height);
+  this->_nodes.reserve(currentNodeCount + grid.width * grid.height);
   for (uint32_t i = 0; i < grid.width; ++i) {
     for (uint32_t j = 0; j < grid.height; ++j) {
-        uint32_t nodeId = grid.gridIdToNodeId(currentNodeCount, {i, j, 0});
+      uint32_t nodeId = grid.gridIdToNodeId(currentNodeCount, {i, j, 0});
 
-        Node& node = this->_nodes.emplace_back();
-        node.id = nodeId;
-        node.position = scale * glm::vec3(i, 0, j) + translation;
-        node.prevPosition = node.position;
-        node.velocity = glm::vec3(0.0f);
-        node.radius = 0.5f * scale;
-        node.mass = 1.0f;
+      Node& node = this->_nodes.emplace_back();
+      node.id = nodeId;
+      node.position = scale * glm::vec3(i, 0, j) + translation;
+      node.prevPosition = node.position;
+      node.velocity = glm::vec3(0.0f);
+      node.radius = 0.5f * scale;
+      node.invMass = 1.0f / mass;
 
-        if (i == 0) {
-          this->_positionConstraints.push_back(
-              createPositionConstraint(this->_constraintId++, node));
-        }
+      if (i == 0 || i == (grid.width - 1)) {
+        this->_positionConstraints.push_back(
+            createPositionConstraint(this->_constraintId++, node, stiffness));
+      }
     }
   }
 
   // Add distance constraints in each grid cell
   this->_distanceConstraints.reserve(
-      currentDistConstraintsCount +
-      8 * (grid.width - 1) * (grid.height - 1));
+      currentDistConstraintsCount + 4 * (grid.width - 1) * (grid.height - 1));
   for (uint32_t i = 0; i < grid.width; ++i) {
     for (uint32_t j = 0; j < grid.height; ++j) {
-        uint32_t node00 = grid.gridIdToNodeId(currentNodeCount, {i, j, 0});
-        uint32_t node01 = grid.gridIdToNodeId(currentNodeCount, {i, j + 1, 0});
-        uint32_t node10 = grid.gridIdToNodeId(currentNodeCount, {i + 1, j, 0});
-        uint32_t node11 = grid.gridIdToNodeId(currentNodeCount, {i + 1, j + 1, 0});
+      uint32_t node00 = grid.gridIdToNodeId(currentNodeCount, {i, j, 0});
+      uint32_t node01 = grid.gridIdToNodeId(currentNodeCount, {i, j + 1, 0});
+      uint32_t node10 = grid.gridIdToNodeId(currentNodeCount, {i + 1, j, 0});
+      uint32_t node11 =
+          grid.gridIdToNodeId(currentNodeCount, {i + 1, j + 1, 0});
 
-        // Grid-aligned constraints
-        if (i < (grid.width - 1)) {
-            this->_distanceConstraints.push_back(createDistanceConstraint(
-                this->_constraintId++,
-                this->_nodes[node00],
-                this->_nodes[node10]));
-        }
+      // Grid-aligned constraints
+      if (i < (grid.width - 1)) {
+        this->_distanceConstraints.push_back(createDistanceConstraint(
+            this->_constraintId++,
+            this->_nodes[node00],
+            this->_nodes[node10],
+            stiffness));
+      }
 
-        if (j < (grid.height - 1)) {
-            this->_distanceConstraints.push_back(createDistanceConstraint(
-                this->_constraintId++,
-                this->_nodes[node00],
-                this->_nodes[node01]));
-        }
+      if (j < (grid.height - 1)) {
+        this->_distanceConstraints.push_back(createDistanceConstraint(
+            this->_constraintId++,
+            this->_nodes[node00],
+            this->_nodes[node01],
+            stiffness));
+      }
 
-        // Long diagonal constraints
-        if (i < (grid.width - 1) && j < (grid.height - 1)) {
-            this->_distanceConstraints.push_back(createDistanceConstraint(
-                this->_constraintId++,
-                this->_nodes[node00],
-                this->_nodes[node11]));
-        }
+      // Long diagonal constraints
+      if (i < (grid.width - 1) && j < (grid.height - 1)) {
+        this->_distanceConstraints.push_back(createDistanceConstraint(
+            this->_constraintId++,
+            this->_nodes[node00],
+            this->_nodes[node11],
+            stiffness));
+        this->_distanceConstraints.push_back(createDistanceConstraint(
+            this->_constraintId++,
+            this->_nodes[node10],
+            this->_nodes[node01],
+            stiffness));
+      }
+
+      // TODO: Add constraints for other diagonal
     }
   }
 
-  this->_triangles.reserve(
-      currentTriCount + (2 * grid.width * grid.height));
+  this->_triangles.reserve(currentTriCount + (2 * grid.width * grid.height));
   for (uint32_t i = 0; i < grid.width - 1; ++i) {
     for (uint32_t j = 0; j < grid.height - 1; ++j) {
       this->_triangles.push_back(
@@ -628,12 +655,13 @@ void Solver::createSheet(const glm::vec3& translation, float scale, float k) {
     }
   }
 
-  for (size_t i = currentDistConstraintsCount;
-       i < this->_distanceConstraints.size();
-       ++i) {
-    this->_distanceConstraints[i].setWeight(
-        1.0f - powf(1.0f - k, 1.0f / this->_options.iterations));
-  }
+  // TODO: This should only be for PBD
+  // for (size_t i = currentDistConstraintsCount;
+  //      i < this->_distanceConstraints.size();
+  //      ++i) {
+  //   this->_distanceConstraints[i].setWeight(
+  //       1.0f - powf(1.0f - k, 1.0f / this->_options.iterations));
+  // }
 
   this->_lines.reserve(
       currentLinesCount +
