@@ -113,7 +113,7 @@ void TetrahedralConstraintProjection::operator()(
 
 TetrahedralConstraint createTetrahedralConstraint(
     uint32_t id,
-    float k,
+    float w,
     const Node& x1,
     const Node& x2,
     const Node& x3,
@@ -126,7 +126,7 @@ TetrahedralConstraint createTetrahedralConstraint(
 
   return TetrahedralConstraint(
       id,
-      k,
+      w,
       Eigen::Matrix4f::Identity(),
       Eigen::Matrix4f::Identity(),
       {glm::inverse(Q)},
@@ -166,7 +166,7 @@ void VolumeConstraintProjection::operator()(
 
 VolumeConstraint createVolumeConstraint(
     uint32_t id,
-    float k,
+    float w,
     const Node& x1,
     const Node& x2,
     const Node& x3,
@@ -178,7 +178,7 @@ VolumeConstraint createVolumeConstraint(
   float targetVolume = glm::dot(glm::cross(x21, x31), x41) / 6.0f;
   return VolumeConstraint(
       id, 
-      k, 
+      w, 
       Eigen::Matrix4f::Identity(),
       Eigen::Matrix4f::Identity(),
       {targetVolume}, 
@@ -219,20 +219,20 @@ void BendConstraintProjection::operator()(
     -((glm::cross(p4, n1) + (glm::cross(n2, p4) * d)) / glm::length(p2Xp4));
   glm::vec3 q1 = -q2 - q3 - q4;
 
-  float massSum = x1.mass + x2.mass + x3.mass + x4.mass;
+  float wSum = x1.invMass + x2.invMass + x3.invMass + x4.invMass;
   float qSquaredSum = pow(glm::length(q1), 2) + pow(glm::length(q2), 2) + pow(glm::length(q3), 2) + pow(glm::length(q4), 2);
   float projNumerator = sqrt(1 - pow(d, 2)) * (acos(d) - this->initialAngle);
 
   //Based on Bending Constraint Projection in Appendix A of PBD 2007 Paper
-  projected[0] += -q1 * (4 * x1.mass / massSum) * (projNumerator) / qSquaredSum;
-  projected[1] += -q2 * (4 * x2.mass / massSum) * (projNumerator) / qSquaredSum;
-  projected[2] += -q3 * (4 * x3.mass / massSum) * (projNumerator) / qSquaredSum;
-  projected[3] += -q4 * (4 * x4.mass / massSum) * (projNumerator) / qSquaredSum;
+  projected[0] += -q1 * (4 * x1.invMass / wSum) * (projNumerator) / qSquaredSum;
+  projected[1] += -q2 * (4 * x2.invMass / wSum) * (projNumerator) / qSquaredSum;
+  projected[2] += -q3 * (4 * x3.invMass / wSum) * (projNumerator) / qSquaredSum;
+  projected[3] += -q4 * (4 * x4.invMass / wSum) * (projNumerator) / qSquaredSum;
 }
 
 BendConstraint createBendConstraint(
     uint32_t id,
-    float k,
+    float w,
     const Node& x1,
     const Node& x2,
     const Node& x3,
@@ -252,7 +252,9 @@ BendConstraint createBendConstraint(
 
   return BendConstraint(
     id,
-    k,
+    w,
+    Eigen::Matrix4f::Identity(),
+    Eigen::Matrix4f::Identity(),
     {targetAngle}, //NOT CONFIDENT ABOUT THIS
     {x1.id, x2.id, x3.id, x4.id}
   );

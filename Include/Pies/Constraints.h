@@ -174,7 +174,7 @@ struct TetrahedralConstraintProjection {
 typedef Constraint<4, TetrahedralConstraintProjection> TetrahedralConstraint;
 TetrahedralConstraint createTetrahedralConstraint(
     uint32_t id,
-    float k,
+    float w,
     const Node& a,
     const Node& b,
     const Node& c,
@@ -191,7 +191,7 @@ struct VolumeConstraintProjection {
 typedef Constraint<4, VolumeConstraintProjection> VolumeConstraint;
 VolumeConstraint createVolumeConstraint(
     uint32_t id,
-    float k,
+    float w,
     const Node& a,
     const Node& b,
     const Node& c,
@@ -218,7 +218,7 @@ struct BendConstraintProjection {
 typedef Constraint<4, BendConstraintProjection> BendConstraint;
 BendConstraint createBendConstraint(
     uint32_t id,
-    float k,
+    float w,
     const Node& a,
     const Node& b,
     const Node& c,

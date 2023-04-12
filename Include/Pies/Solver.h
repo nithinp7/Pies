@@ -63,16 +63,16 @@ public:
   void clear();
 
   // Utilities for spawning primitives
-  void createBox(const glm::vec3& translation, float scale, float stiffness);
+  void createBox(const glm::vec3& translation, float scale, float w);
   void createTetBox(
       const glm::vec3& translation,
       float scale,
       const glm::vec3& initialVelocity,
-      float stiffness,
+      float w,
       float mass,
       bool hinged);
-  void createSheet(const glm::vec3& translation, float scale, float mass, float k);
-  void createBendSheet(const glm::vec3& translation, float scale, float k);
+  void createSheet(const glm::vec3& translation, float scale, float mass, float w);
+  void createBendSheet(const glm::vec3& translation, float scale, float w);
 
 private:
   void _computeCollisions();
