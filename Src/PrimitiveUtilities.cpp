@@ -75,10 +75,9 @@ void Solver::createTetBox(
         node.radius = 0.5f * scale;
         node.invMass = 1.0f / mass;
 
-        if (hinged && i == 0) {//} && j == 0) {
+        if (hinged && i == 0) { //} && j == 0) {
           this->_positionConstraints.push_back(
-              createPositionConstraint(this->_constraintId++, node,
-              stiffness));
+              createPositionConstraint(this->_constraintId++, node, stiffness));
         }
       }
     }
@@ -558,7 +557,7 @@ void Solver::createSheet(
     float scale,
     float mass,
     float stiffness) {
-  Grid grid{12, 12, 1};
+  Grid grid{40, 40, 1};
 
   size_t currentNodeCount = this->_nodes.size();
   size_t currentDistConstraintsCount = this->_distanceConstraints.size();
@@ -583,7 +582,7 @@ void Solver::createSheet(
       node.radius = 0.5f * scale;
       node.invMass = 1.0f / mass;
 
-      if (i == 0 || i == (grid.width - 1)) {
+      if (i == 0 || i == (grid.width - 1) || j == 0 || j == (grid.height - 1)) {
         this->_positionConstraints.push_back(
             createPositionConstraint(this->_constraintId++, node, stiffness));
       }
