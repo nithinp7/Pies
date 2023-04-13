@@ -687,7 +687,7 @@ void Solver::createSheet(
 }
 
 void Solver::createBendSheet(const glm::vec3& translation, float scale, float w) {
-  Grid grid{20, 20, 1};
+  Grid grid{10, 10, 1};
 
   size_t currentNodeCount = this->_nodes.size();
   size_t currentDistConstraintsCount = this->_distanceConstraints.size();

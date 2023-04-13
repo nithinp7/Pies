@@ -19,7 +19,7 @@ enum class SolverName { PBD, PD };
 
 struct SolverOptions {
   uint32_t iterations = 4;
-  uint32_t timeSubsteps = 1;
+  uint32_t timeSubsteps = 3;
   float fixedTimestepSize = 0.012f;
   float gravity = 10.0f;
   float damping = 0.0005f;
