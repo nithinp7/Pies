@@ -64,7 +64,11 @@ public:
 
   // Utilities for importing meshes
   void addNodes(const std::vector<glm::vec3>& vertices);
-  
+  void addTriMeshVolume(
+      const std::vector<glm::vec3>& vertices,
+      const std::vector<uint32_t>& triIndices,
+      float w);
+
   // Utilities for spawning primitives
   void createBox(const glm::vec3& translation, float scale, float w);
   void createTetBox(
@@ -74,7 +78,8 @@ public:
       float w,
       float mass,
       bool hinged);
-  void createSheet(const glm::vec3& translation, float scale, float mass, float w);
+  void
+  createSheet(const glm::vec3& translation, float scale, float mass, float w);
   void createBendSheet(const glm::vec3& translation, float scale, float w);
 
 private:
