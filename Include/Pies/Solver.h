@@ -19,7 +19,7 @@ enum class SolverName { PBD, PD };
 
 struct SolverOptions {
   uint32_t iterations = 4;
-  uint32_t timeSubsteps = 1;
+  uint32_t timeSubsteps = 3;
   float fixedTimestepSize = 0.012f;
   float gravity = 10.0f;
   float damping = 0.0005f;
@@ -66,16 +66,16 @@ public:
   void addNodes(const std::vector<glm::vec3>& vertices);
   
   // Utilities for spawning primitives
-  void createBox(const glm::vec3& translation, float scale, float stiffness);
+  void createBox(const glm::vec3& translation, float scale, float w);
   void createTetBox(
       const glm::vec3& translation,
       float scale,
       const glm::vec3& initialVelocity,
-      float stiffness,
+      float w,
       float mass,
       bool hinged);
-  void
-  createSheet(const glm::vec3& translation, float scale, float mass, float k);
+  void createSheet(const glm::vec3& translation, float scale, float mass, float w);
+  void createBendSheet(const glm::vec3& translation, float scale, float w);
 
 private:
   void _computeCollisions();
@@ -104,6 +104,7 @@ private:
   std::vector<PositionConstraint> _positionConstraints;
   std::vector<DistanceConstraint> _distanceConstraints;
   std::vector<TetrahedralConstraint> _tetConstraints;
+  std::vector<BendConstraint> _bendConstraints;
 
   uint32_t _previousNodeCount = 0;
   Eigen::MatrixXf _stateVector;
