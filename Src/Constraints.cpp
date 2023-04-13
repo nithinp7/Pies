@@ -46,13 +46,14 @@ void PositionConstraintProjection::operator()(
   projected[0] = this->fixedPosition;
 }
 
-PositionConstraint createPositionConstraint(uint32_t id, const Node& node, float w) {
+PositionConstraint
+createPositionConstraint(uint32_t id, const Node& node, float w) {
   return PositionConstraint(
-      id, 
-      w, 
+      id,
+      w,
       Eigen::Matrix<float, 1, 1>::Identity(),
       Eigen::Matrix<float, 1, 1>::Identity(),
-      {node.position}, 
+      {node.position},
       {node.id});
 }
 
@@ -97,8 +98,10 @@ void TetrahedralConstraintProjection::operator()(
                           glm::column(dCijdX, 2);
       float denom =
           x1.invMass * glm::dot(dCijdx1, dCijdx1) +
-          x2.invMass * glm::dot(glm::column(dCijdX, 0), glm::column(dCijdX, 0)) +
-          x3.invMass * glm::dot(glm::column(dCijdX, 1), glm::column(dCijdX, 1)) +
+          x2.invMass *
+              glm::dot(glm::column(dCijdX, 0), glm::column(dCijdX, 0)) +
+          x3.invMass *
+              glm::dot(glm::column(dCijdX, 1), glm::column(dCijdX, 1)) +
           x4.invMass * glm::dot(glm::column(dCijdX, 2), glm::column(dCijdX, 2));
       float lambda = C[i][j] / denom;
 
@@ -113,7 +116,7 @@ void TetrahedralConstraintProjection::operator()(
 
 TetrahedralConstraint createTetrahedralConstraint(
     uint32_t id,
-    float k,
+    float w,
     const Node& x1,
     const Node& x2,
     const Node& x3,
@@ -126,7 +129,7 @@ TetrahedralConstraint createTetrahedralConstraint(
 
   return TetrahedralConstraint(
       id,
-      k,
+      w,
       Eigen::Matrix4f::Identity(),
       Eigen::Matrix4f::Identity(),
       {glm::inverse(Q)},
@@ -166,7 +169,7 @@ void VolumeConstraintProjection::operator()(
 
 VolumeConstraint createVolumeConstraint(
     uint32_t id,
-    float k,
+    float w,
     const Node& x1,
     const Node& x2,
     const Node& x3,
@@ -177,11 +180,98 @@ VolumeConstraint createVolumeConstraint(
 
   float targetVolume = glm::dot(glm::cross(x21, x31), x41) / 6.0f;
   return VolumeConstraint(
-      id, 
-      k, 
+      id,
+      w,
       Eigen::Matrix4f::Identity(),
       Eigen::Matrix4f::Identity(),
-      {targetVolume}, 
+      {targetVolume},
       {x1.id, x2.id, x3.id, x4.id});
 }
+
+void BendConstraintProjection::operator()(
+    const std::vector<Node>& nodes,
+    const std::array<uint32_t, 4>& nodeIds,
+    std::array<glm::vec3, 4>& projected) const {
+
+  const Node& x1 = nodes[nodeIds[0]];
+  const Node& x2 = nodes[nodeIds[1]];
+  const Node& x3 = nodes[nodeIds[2]];
+  const Node& x4 = nodes[nodeIds[3]];
+
+  glm::vec3 p2 = x2.position - x1.position;
+  glm::vec3 p3 = x3.position - x1.position;
+  glm::vec3 p4 = x4.position - x1.position;
+
+  glm::vec3 p2Xp3 = glm::cross(p2, p3);
+  glm::vec3 p2Xp4 = glm::cross(p2, p4);
+
+  float p2Xp3_len = glm::length(p2Xp3);
+  float p2Xp4_len = glm::length(p2Xp4);
+
+  // TODO: Divide by zero check for degenerate triangles
+  glm::vec3 n1 = p2Xp3 / p2Xp3_len;
+  glm::vec3 n2 = p2Xp4 / p2Xp4_len;
+
+  float d = glm::dot(n1, n2);
+  float d2 = d * d;
+
+  float C = acos(d) - this->initialAngle;
+  projected[0] = x1.position;
+  projected[1] = x2.position;
+  projected[2] = x3.position;
+  projected[3] = x4.position;
+
+  glm::vec3 q3 =
+      (glm::cross(p2, n2) + (glm::cross(n1, p2) * d)) / p2Xp3_len;
+  glm::vec3 q4 =
+      (glm::cross(p2, n1) + (glm::cross(n2, p2) * d)) / p2Xp4_len;
+  glm::vec3 q2 =
+      -((glm::cross(p3, n2) + (glm::cross(n1, p3) * d)) / p2Xp3_len) -
+      ((glm::cross(p4, n1) + (glm::cross(n2, p4) * d)) / p2Xp4_len);
+  glm::vec3 q1 = -q2 - q3 - q4;
+
+  float wSum = x1.invMass + x2.invMass + x3.invMass + x4.invMass;
+  float qSquaredSum =
+      glm::dot(q1, q1) + glm::dot(q2, q2) + glm::dot(q3, q3) + glm::dot(q4, q4);
+  float projNumerator = sqrt(glm::max(1.0f - d2, 0.0f)) * C;
+
+  if (qSquaredSum < 0.00001f) {
+    return;
+  }
+
+  // Based on Bending Constraint Projection in Appendix A of PBD 2007 Paper
+  projected[0] += -q1 * (4 * x1.invMass / wSum) * (projNumerator) / qSquaredSum;
+  projected[1] += -q2 * (4 * x2.invMass / wSum) * (projNumerator) / qSquaredSum;
+  projected[2] += -q3 * (4 * x3.invMass / wSum) * (projNumerator) / qSquaredSum;
+  projected[3] += -q4 * (4 * x4.invMass / wSum) * (projNumerator) / qSquaredSum;
+}
+
+BendConstraint createBendConstraint(
+    uint32_t id,
+    float w,
+    const Node& x1,
+    const Node& x2,
+    const Node& x3,
+    const Node& x4) {
+
+  // Node x2 and x3 comprise the shared edge of the adjacent triangles
+
+  glm::vec3 p2 = x2.position - x1.position;
+  glm::vec3 p3 = x3.position - x1.position;
+  glm::vec3 p4 = x4.position - x1.position;
+
+  glm::vec3 n1 = glm::normalize(glm::cross(p2, p3));
+  glm::vec3 n2 = glm::normalize(glm::cross(p2, p4));
+
+  float targetAngle = acos(glm::dot(n1, n2));
+
+  return BendConstraint(
+      id,
+      w,
+      Eigen::Matrix4f::Identity(),
+      Eigen::Matrix4f::Identity(),
+      {targetAngle},
+      {x1.id, x2.id, x3.id, x4.id});
+}
+
 } // namespace Pies

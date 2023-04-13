@@ -58,6 +58,10 @@ void Solver::tickPBD(float /*timestep*/) {
         constraint.projectNodePositions(this->_nodes);
       }
 
+      for (BendConstraint& constraint : this->_bendConstraints) {
+        constraint.projectNodePositions(this->_nodes);
+      }
+
       // // TODO: Collision solver
       // this->_spatialHashTets.clear();
       // this->_spatialHashTets.parallelBulkInsert(this->_tets, {this->_nodes});
@@ -178,6 +182,10 @@ void Solver::tickPD(float /*timestep*/) {
       constraint.setupGlobalStiffnessMatrix(this->_stiffnessMatrix);
     }
 
+    for (BendConstraint& constraint : this->_bendConstraints) {
+      constraint.setupGlobalStiffnessMatrix(this->_stiffnessMatrix);
+    }
+
     // Perform Sparse Cholesky LLT factorization
     this->_pLltDecomp =
         std::make_unique<Eigen::SimplicialLLT<Eigen::SparseMatrix<float>>>(
@@ -223,6 +231,10 @@ void Solver::tickPD(float /*timestep*/) {
       for (TetrahedralConstraint& constraint : this->_tetConstraints) {
         constraint.projectToAuxiliaryVariable(this->_nodes);
       }
+      
+      for (BendConstraint& constraint : this->_bendConstraints) {
+        constraint.projectToAuxiliaryVariable(this->_nodes);
+      }
 
       for (PositionConstraint& constraint : this->_positionConstraints) {
         constraint.setupGlobalForceVector(this->_forceVector);
@@ -233,6 +245,10 @@ void Solver::tickPD(float /*timestep*/) {
       }
 
       for (TetrahedralConstraint& constraint : this->_tetConstraints) {
+        constraint.setupGlobalForceVector(this->_forceVector);
+      }
+
+      for (BendConstraint& constraint : this->_bendConstraints) {
         constraint.setupGlobalForceVector(this->_forceVector);
       }
 
@@ -325,6 +341,7 @@ void Solver::clear() {
   this->_nodes.clear();
   this->_distanceConstraints.clear();
   this->_tetConstraints.clear();
+  this->_bendConstraints.clear();
   this->_tets.clear();
   this->_positionConstraints.clear();
   this->_vertices.clear();
