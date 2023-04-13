@@ -62,6 +62,9 @@ public:
 
   void clear();
 
+  // Utilities for importing meshes
+  void addNodes(const std::vector<glm::vec3>& vertices);
+  
   // Utilities for spawning primitives
   void createBox(const glm::vec3& translation, float scale, float stiffness);
   void createTetBox(

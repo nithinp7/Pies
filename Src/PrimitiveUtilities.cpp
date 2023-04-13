@@ -37,6 +37,43 @@ struct Grid {
 };
 } // namespace
 
+void Solver::addNodes(
+    const std::vector<glm::vec3>& vertices) {
+  
+  // TODO: parameterize more of these
+  float mass = 1.0f;
+  float radius = 0.5f;
+  glm::vec3 initialVelocity(0.0f);
+
+  glm::vec3 color = randColor();
+  float roughness = randf();
+  float metallic = static_cast<float>(std::rand() % 2);
+
+  size_t currentNodeCount = this->_nodes.size();
+  this->_nodes.reserve(
+      currentNodeCount + vertices.size());
+  for (uint32_t i = 0; i < static_cast<uint32_t>(vertices.size()); ++i) {
+    Node& node = this->_nodes.emplace_back();
+    node.id = currentNodeCount + i;
+    node.position = vertices[i];
+    node.prevPosition = node.position;
+    node.velocity = initialVelocity;
+    node.radius = radius;
+    node.invMass = 1.0f / mass;
+  }
+
+  this->_vertices.resize(this->_nodes.size());
+  for (size_t i = currentNodeCount; i < this->_nodes.size(); ++i) {
+    this->_vertices[i].position = this->_nodes[i].position;
+    this->_vertices[i].radius = this->_nodes[i].radius;
+    this->_vertices[i].baseColor = color;
+    this->_vertices[i].roughness = roughness;
+    this->_vertices[i].metallic = metallic;
+  }
+
+  this->renderStateDirty = true;
+}
+
 void Solver::createTetBox(
     const glm::vec3& translation,
     float scale,
