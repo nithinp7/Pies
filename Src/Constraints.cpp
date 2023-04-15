@@ -178,7 +178,7 @@ VolumeConstraint createVolumeConstraint(
   float targetVolume = glm::dot(glm::cross(x21, x31), x41) / 6.0f;
   return VolumeConstraint(
       id, 
-      k, 
+      k,
       Eigen::Matrix4f::Identity(),
       Eigen::Matrix4f::Identity(),
       {targetVolume}, 

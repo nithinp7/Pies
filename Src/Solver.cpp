@@ -184,6 +184,10 @@ void Solver::tickPD(float /*timestep*/) {
       constraint.setupGlobalStiffnessMatrix(this->_stiffnessMatrix);
     }
 
+    for (VolumeConstraint& constraint : this->_volumeConstraints) {
+      constraint.setupGlobalStiffnessMatrix(this->_stiffnessMatrix);
+    }
+
     for (ShapeMatchingConstraint& constraint : this->_shapeConstraints) {
       constraint.setupGlobalStiffnessMatrix(this->_stiffnessMatrix);
     }
@@ -209,79 +213,8 @@ void Solver::tickPD(float /*timestep*/) {
       Node& node = this->_nodes[i];
       // Construct momentum estimate for qn+1
       node.position += h * node.velocity + h2 * node.force * node.invMass;
-
-      glm::vec3 Msn_h2 = node.position / node.invMass / h2;
-      this->_Msn_h2.coeffRef(i, 0) = Msn_h2.x;
-      this->_Msn_h2.coeffRef(i, 1) = Msn_h2.y;
-      this->_Msn_h2.coeffRef(i, 2) = Msn_h2.z;
     }
 
-    for (uint32_t iter = 0; iter < this->_options.iterations; ++iter) {
-      // Construct global force vector and set initial node position estimate
-      this->_forceVector = this->_Msn_h2;
-
-      // Project all constraints onto auxiliary variable (local step)
-      // TODO: Parallelize this step
-      for (PositionConstraint& constraint : this->_positionConstraints) {
-        constraint.projectToAuxiliaryVariable(this->_nodes);
-      }
-
-      for (DistanceConstraint& constraint : this->_distanceConstraints) {
-        constraint.projectToAuxiliaryVariable(this->_nodes);
-      }
-
-      for (TetrahedralConstraint& constraint : this->_tetConstraints) {
-        constraint.projectToAuxiliaryVariable(this->_nodes);
-      }
-
-      for (ShapeMatchingConstraint& constraint : this->_shapeConstraints) {
-        constraint.projectToAuxiliaryVariable(this->_nodes);
-      }
-
-      for (PositionConstraint& constraint : this->_positionConstraints) {
-        constraint.setupGlobalForceVector(this->_forceVector);
-      }
-
-      for (DistanceConstraint& constraint : this->_distanceConstraints) {
-        constraint.setupGlobalForceVector(this->_forceVector);
-      }
-
-      for (TetrahedralConstraint& constraint : this->_tetConstraints) {
-        constraint.setupGlobalForceVector(this->_forceVector);
-      }
-
-      for (ShapeMatchingConstraint& constraint : this->_shapeConstraints) {
-        constraint.setupGlobalForceVector(this->_forceVector);
-      }
-
-      // this->_computeCollisions();
-      // this->_parallelComputeCollisions();
-      // this->_parallelPointTriangleCollisions();
-
-      // this->_stiffnessAndCollisionMatrix =
-      //     this->_stiffnessMatrix + this->_collisionMatrix;
-      // TODO: Just for testing, don't solve collision this way.
-      // this->_pLltDecomp =
-      //     std::make_unique<Eigen::SimplicialLLT<Eigen::SparseMatrix<float>>>(
-      //         this->_stiffnessAndCollisionMatrix);
-
-      // Parallelize solving x,y,z coordinates
-      // Note: Make sure to offset the starting node index of each thread
-      // to avoid false-sharing when writing to the state vector
-
-      // Solve the global system using the precomputed factorization
-      this->_stateVector = this->_pLltDecomp->solve(this->_forceVector);
-
-      // Update node positions from the global solve results
-      for (uint32_t i = 0; i < nodeCount; ++i) {
-        Node& node = this->_nodes[i];
-        node.position.x = this->_stateVector.coeff(i, 0);
-        node.position.y = this->_stateVector.coeff(i, 1);
-        node.position.z = this->_stateVector.coeff(i, 2);
-      }
-    }
-
-    // this->_parallelComputeCollisions();
     this->_parallelPointTriangleCollisions();
     for (uint32_t collisionIter = 0;
          collisionIter < this->_options.collisionIterations;
@@ -313,6 +246,146 @@ void Solver::tickPD(float /*timestep*/) {
       }
     }
 
+    for (uint32_t i = 0; i < nodeCount; ++i) {
+      const Node& node = this->_nodes[i];
+      glm::vec3 Msn_h2 = node.position / node.invMass / h2;
+      this->_Msn_h2.coeffRef(i, 0) = Msn_h2.x;
+      this->_Msn_h2.coeffRef(i, 1) = Msn_h2.y;
+      this->_Msn_h2.coeffRef(i, 2) = Msn_h2.z;
+    }
+
+    for (uint32_t iter = 0; iter < this->_options.iterations; ++iter) {
+      // Construct global force vector and set initial node position estimate
+      this->_forceVector = this->_Msn_h2;
+
+      // Project all constraints onto auxiliary variable (local step)
+      // TODO: Parallelize this step
+      for (PositionConstraint& constraint : this->_positionConstraints) {
+        constraint.projectToAuxiliaryVariable(this->_nodes);
+      }
+
+      for (DistanceConstraint& constraint : this->_distanceConstraints) {
+        constraint.projectToAuxiliaryVariable(this->_nodes);
+      }
+
+      for (TetrahedralConstraint& constraint : this->_tetConstraints) {
+        constraint.projectToAuxiliaryVariable(this->_nodes);
+      }
+
+      for (VolumeConstraint& constraint : this->_volumeConstraints) {
+        constraint.projectToAuxiliaryVariable(this->_nodes);
+      }
+
+      for (ShapeMatchingConstraint& constraint : this->_shapeConstraints) {
+        constraint.projectToAuxiliaryVariable(this->_nodes);
+      }
+
+      for (PointTriangleCollisionConstraint& collision : this->_triCollisions) {
+        collision.projectToAuxiliaryVariable(this->_nodes);
+      }
+
+      for (StaticCollisionConstraint& collision : this->_staticCollisions) {
+        const Node& node = this->_nodes[collision.nodeId];
+        collision.projectedPosition = node.position;
+        collision.projectedPosition.y = this->_options.floorHeight;
+      }
+
+      for (PositionConstraint& constraint : this->_positionConstraints) {
+        constraint.setupGlobalForceVector(this->_forceVector);
+      }
+
+      for (DistanceConstraint& constraint : this->_distanceConstraints) {
+        constraint.setupGlobalForceVector(this->_forceVector);
+      }
+
+      for (TetrahedralConstraint& constraint : this->_tetConstraints) {
+        constraint.setupGlobalForceVector(this->_forceVector);
+      }
+
+      for (VolumeConstraint& constraint : this->_volumeConstraints) {
+        constraint.setupGlobalForceVector(this->_forceVector);
+      }
+
+      for (ShapeMatchingConstraint& constraint : this->_shapeConstraints) {
+        constraint.setupGlobalForceVector(this->_forceVector);
+      }
+
+      this->_collisionMatrix.setZero();
+      this->_stiffnessAndCollisionMatrix.setZero();
+
+      for (const PointTriangleCollisionConstraint& collision :
+           this->_triCollisions) {
+        collision.setupCollisionMatrix(this->_collisionMatrix);
+        collision.setupGlobalForceVector(this->_forceVector);
+      }
+
+      for (const StaticCollisionConstraint& collision :
+           this->_staticCollisions) {
+        collision.setupCollisionMatrix(this->_collisionMatrix);
+        collision.setupGlobalForceVector(this->_forceVector);
+      }
+
+      // this->_computeCollisions();
+      // this->_parallelComputeCollisions();
+      // this->_parallelPointTriangleCollisions();
+
+      this->_stiffnessAndCollisionMatrix =
+          this->_stiffnessMatrix + this->_collisionMatrix;
+      // TODO: Just for testing, don't solve collision this way.
+      this->_pLltDecomp =
+          std::make_unique<Eigen::SimplicialLLT<Eigen::SparseMatrix<float>>>(
+              this->_stiffnessAndCollisionMatrix);
+
+      // Parallelize solving x,y,z coordinates
+      // Note: Make sure to offset the starting node index of each thread
+      // to avoid false-sharing when writing to the state vector
+
+      // Solve the global system using the precomputed factorization
+      this->_stateVector = this->_pLltDecomp->solve(this->_forceVector);
+
+      // Update node positions from the global solve results
+      for (uint32_t i = 0; i < nodeCount; ++i) {
+        Node& node = this->_nodes[i];
+        node.position.x = this->_stateVector.coeff(i, 0);
+        node.position.y = this->_stateVector.coeff(i, 1);
+        node.position.z = this->_stateVector.coeff(i, 2);
+      }
+    }
+
+#if 0
+    // this->_parallelComputeCollisions();
+    // this->_parallelPointTriangleCollisions();
+    for (uint32_t collisionIter = 0;
+         collisionIter < this->_options.collisionIterations;
+         ++collisionIter) {
+      // this->_parallelComputeCollisions();
+      // this->_parallelPointTriangleCollisions();
+      for (CollisionConstraint& collision : this->_collisions) {
+        collision.projectToAuxiliaryVariable(this->_nodes);
+        Node& nodeA = this->_nodes[collision.nodeIds[0]];
+        Node& nodeB = this->_nodes[collision.nodeIds[1]];
+        nodeA.position += this->_options.collionStiffness *
+                          (collision.projectedPositions[0] - nodeA.position);
+        nodeB.position += this->_options.collionStiffness *
+                          (collision.projectedPositions[1] - nodeB.position);
+      }
+
+      for (PointTriangleCollisionConstraint& collision : this->_triCollisions) {
+        collision.projectToAuxiliaryVariable(this->_nodes);
+        for (uint32_t i = 0; i < 4; ++i) {
+          Node& node = this->_nodes[collision.nodeIds[i]];
+          node.position += this->_options.collionStiffness *
+                           (collision.projectedPositions[i] - node.position);
+        }
+      }
+
+      for (StaticCollisionConstraint& collision : this->_staticCollisions) {
+        // TODO: stiffness
+        this->_nodes[collision.nodeId].position = collision.projectedPosition;
+      }
+    }
+#endif
+
     // Update node velocities
     for (uint32_t i = 0; i < nodeCount; ++i) {
       Node& node = this->_nodes[i];
@@ -321,7 +394,7 @@ void Solver::tickPD(float /*timestep*/) {
 
       node.prevPosition = node.position;
       this->_vertices[i].position = node.position;
-      // this->_vertices[i].baseColor = glm::vec3(0.0f, 1.0f, 0.0f);
+      this->_vertices[i].baseColor = glm::vec3(0.0f, 1.0f, 0.0f);
     }
 
     // Update friction
@@ -364,6 +437,11 @@ void Solver::tickPD(float /*timestep*/) {
         continue;
       }
 
+      for (uint32_t i = 0; i < 4; ++i) {
+        this->_vertices[collision.nodeIds[i]].baseColor =
+            glm::vec3(1.0f, 0.0f, 0.0f);
+      }
+
       Node& a = this->_nodes[collision.nodeIds[0]];
       Node& b = this->_nodes[collision.nodeIds[1]];
       Node& c = this->_nodes[collision.nodeIds[2]];
@@ -388,11 +466,6 @@ void Solver::tickPD(float /*timestep*/) {
       b.velocity += -friction * perpVel * b.invMass / wSum;
       c.velocity += -friction * perpVel * c.invMass / wSum;
       d.velocity += -friction * perpVel * d.invMass / wSum;
-
-      // this->_vertices[collision.nodeIds[0]].baseColor =
-      //     glm::vec3(1.0f, 0.0f, 0.0f);
-      // this->_vertices[collision.nodeIds[1]].baseColor =
-      //     glm::vec3(1.0f, 0.0f, 0.0f);
     }
 
     for (const StaticCollisionConstraint& collision : this->_staticCollisions) {
@@ -417,6 +490,7 @@ void Solver::clear() {
   this->_nodes.clear();
   this->_distanceConstraints.clear();
   this->_tetConstraints.clear();
+  this->_volumeConstraints.clear();
   this->_shapeConstraints.clear();
   this->_tets.clear();
   this->_positionConstraints.clear();
@@ -580,7 +654,7 @@ SpatialHashGridCellRange ccdRange(
     const SpatialHashGrid& grid) {
   float radius = 0.5f * glm::length(pos - prevPos);
   glm::vec3 center = 0.5f * pos + 0.5f * prevPos;
-  float radiusPadding = 1.5f;
+  float radiusPadding = 2.0f;
   float gridLocalRadius = (radius + radiusPadding) / grid.scale;
   glm::vec3 gridLocalPos = center / grid.scale;
   glm::vec3 gridLocalMin = gridLocalPos - glm::vec3(gridLocalRadius);
@@ -775,24 +849,34 @@ SpatialHashGridCellRange Solver::TetCompRange::operator()(
 SpatialHashGridCellRange Solver::TriCompRange::operator()(
     const Triangle& triangle,
     const SpatialHashGrid& grid) const {
+  const Node& n1 = nodes[triangle.nodeIds[0]];
+  const Node& n2 = nodes[triangle.nodeIds[1]];
+  const Node& n3 = nodes[triangle.nodeIds[2]];
+
+  glm::vec3 max = n1.position;
+  glm::vec3 min = n1.position;
+
+  for (uint32_t i = 0; i < 3; ++i) {
+    const Node& node = nodes[triangle.nodeIds[i]];
+    max = glm::max(node.position, max);
+    max = glm::max(node.prevPosition, max);
+
+    min = glm::min(node.position, min);
+    min = glm::min(node.prevPosition, min);
+  }
+
   glm::vec3 x1 = nodes[triangle.nodeIds[0]].position / grid.scale;
   glm::vec3 x2 = nodes[triangle.nodeIds[1]].position / grid.scale;
   glm::vec3 x3 = nodes[triangle.nodeIds[2]].position / grid.scale;
 
   SpatialHashGridCellRange range{};
-  range.minX =
-      static_cast<int64_t>(glm::floor(glm::min(glm::min(x1.x, x2.x), x3.x)));
-  range.minY =
-      static_cast<int64_t>(glm::floor(glm::min(glm::min(x1.y, x2.y), x3.y)));
-  range.minZ =
-      static_cast<int64_t>(glm::floor(glm::min(glm::min(x1.z, x2.z), x3.z)));
+  range.minX = static_cast<int64_t>(glm::floor(min.x));
+  range.minY = static_cast<int64_t>(glm::floor(min.y));
+  range.minZ = static_cast<int64_t>(glm::floor(min.z));
 
-  range.lengthX = static_cast<uint32_t>(
-      glm::ceil(glm::max(glm::max(x1.x, x2.x), x3.x)) - range.minX);
-  range.lengthY = static_cast<uint32_t>(
-      glm::ceil(glm::max(glm::max(x1.y, x2.y), x3.y)) - range.minY);
-  range.lengthZ = static_cast<uint32_t>(
-      glm::ceil(glm::max(glm::max(x1.z, x2.z), x3.z)) - range.minZ);
+  range.lengthX = static_cast<uint32_t>(glm::ceil(max.x) - range.minX);
+  range.lengthY = static_cast<uint32_t>(glm::ceil(max.y) - range.minY);
+  range.lengthZ = static_cast<uint32_t>(glm::ceil(max.z) - range.minZ);
 
   if (range.lengthX > 50 || range.lengthY > 50 || range.lengthZ > 50) {
     return {};

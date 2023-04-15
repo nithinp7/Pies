@@ -29,7 +29,7 @@ struct CollisionConstraint {
 };
 
 struct PointTriangleCollisionConstraint {
-  float w = 100000.0f;
+  float w = 10000.0f;
   uint32_t nodeIds[4];
   glm::vec3 projectedPositions[4];
   glm::vec3 n;
@@ -47,7 +47,7 @@ struct PointTriangleCollisionConstraint {
 };
 
 struct StaticCollisionConstraint {
-  float w = 100000.0f;
+  float w = 1000000.0f;
   uint32_t nodeId;
   glm::vec3 projectedPosition;
 

@@ -96,7 +96,13 @@ void PointTriangleCollisionConstraint::projectToAuxiliaryVariable(
   glm::vec3 bd = nodeD.position - nodeB.position;
   glm::vec3 ba0 = prevPoint - nodeB.position;
   glm::vec3 ba1 = nodeA.position - nodeB.position;
-  this->n = glm::normalize(glm::cross(bc, bd));
+  glm::vec3 n = glm::cross(bc, bd);
+  float n_magSq = glm::dot(n, n);
+  if (n_magSq < 0.0001f) {
+    return;
+  }
+
+  this->n /= std::sqrt(n_magSq);
 
   float ba0_n = glm::dot(ba0, n);
   float ba1_n = glm::dot(ba1, n);
@@ -105,9 +111,9 @@ void PointTriangleCollisionConstraint::projectToAuxiliaryVariable(
   float lineLength = glm::length(lineSegment);
 
   glm::vec3 disp;
-  float thickness = 1.0f;
+  float thickness = 0.5f;
 
-  if (lineLength > 0.0001f && ba0_n * ba1_n < 0.0f) {
+  if (lineLength > 0.0001f && ba0_n > 0.0f && ba1_n < 0.0f) {
     // Check if the line segment crosses the triangle plane at all.
 
     glm::vec3 dir = lineSegment / lineLength;
@@ -140,11 +146,11 @@ void PointTriangleCollisionConstraint::projectToAuxiliaryVariable(
       return;
     }
 
-    if (ba1_n < 0.0) {
-      disp = -(thickness + ba1_n) * n;
-    } else {
+    // if (ba1_n < 0.0) {
+    //   disp = -(thickness + ba1_n) * n;
+    // } else {
       disp = (thickness - ba1_n) * n;
-    }
+    // }
   }
 
   float wSum = nodeA.invMass + nodeB.invMass + nodeC.invMass + nodeD.invMass;
@@ -159,6 +165,10 @@ void PointTriangleCollisionConstraint::projectToAuxiliaryVariable(
 
 void PointTriangleCollisionConstraint::setupCollisionMatrix(
     Eigen::SparseMatrix<float>& systemMatrix) const {
+  if (!this->colliding) {
+    return;
+  }
+
   systemMatrix.coeffRef(nodeIds[0], nodeIds[0]) += this->w;
   systemMatrix.coeffRef(nodeIds[1], nodeIds[1]) += this->w;
   systemMatrix.coeffRef(nodeIds[2], nodeIds[2]) += this->w;
@@ -168,6 +178,9 @@ void PointTriangleCollisionConstraint::setupCollisionMatrix(
 void PointTriangleCollisionConstraint::setupGlobalForceVector(
     Eigen::MatrixXf& forceVector) const {
   // TODO: Do we need to declar no alias for projectedPositions or nodeIds??
+  if (!this->colliding) {
+    return;
+  }
 
   forceVector.coeffRef(nodeIds[0], 0) += this->w * projectedPositions[0].x;
   forceVector.coeffRef(nodeIds[0], 1) += this->w * projectedPositions[0].y;
