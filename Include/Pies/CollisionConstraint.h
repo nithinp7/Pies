@@ -29,11 +29,12 @@ struct CollisionConstraint {
 };
 
 struct PointTriangleCollisionConstraint {
-  float w = 10000.0f;
+  float w = 100000.0f;
   uint32_t nodeIds[4];
   glm::vec3 projectedPositions[4];
   glm::vec3 n;
-  float thickness = 0.1f;
+  float thickness = 0.15f;
+  bool colliding = false;
 
   PointTriangleCollisionConstraint(
       const Node& a,
@@ -48,7 +49,7 @@ struct PointTriangleCollisionConstraint {
 };
 
 struct StaticCollisionConstraint {
-  float w = 1000000.0f;
+  float w = 10000.0f;
   uint32_t nodeId;
   glm::vec3 projectedPosition;
 

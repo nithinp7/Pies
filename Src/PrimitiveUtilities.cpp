@@ -47,7 +47,7 @@ void Solver::createTetBox(
   Grid grid{3, 3, 3};
 
   if (hinged) {
-    grid = Grid{15, 15, 2};
+    grid = Grid{10, 2, 10};
   }
 
   size_t currentNodeCount = this->_nodes.size();
@@ -75,10 +75,10 @@ void Solver::createTetBox(
         node.radius = 0.95f * 0.5f * scale;
         node.invMass = 1.0f / mass;
 
-        if (hinged && i == 0) { //} && j == 0) {
-          this->_positionConstraints.push_back(
-              createPositionConstraint(this->_constraintId++, node, stiffness));
-        }
+        // if (hinged && i == 0) { //} && j == 0) {
+        //   this->_positionConstraints.push_back(
+        //       createPositionConstraint(this->_constraintId++, node, stiffness));
+        // }
       }
     }
   }

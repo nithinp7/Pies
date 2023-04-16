@@ -100,7 +100,7 @@ inline void expandTerm(
 
 namespace Pies {
 namespace CollisionDetection {
-  
+
 std::optional<float> linearCCD(
     const glm::vec3& ap0,
     const glm::vec3& ab0,
@@ -122,27 +122,47 @@ std::optional<float> linearCCD(
   expandTerm(-ac0.x, ab0.y, ap0.z, -acd.x, abd.y, apd.z, expression);
 
   std::optional<float> t = expression.findRootInInterval();
-  if (!t) {
+  if (t) {
+    // Now that we have a t-value for the ray-plane intersection, check if
+    // the ray hits the triangle particularly
+    glm::vec3 apt = ap0 + *t * apd;
+    glm::vec3 abt = ab0 + *t * abd;
+    glm::vec3 act = ac0 + *t * acd;
+
+    glm::vec3 n = glm::normalize(glm::cross(abt, act));
+
+    glm::vec3 barycentricCoords = glm::inverse(glm::mat3(abt, act, n)) * apt;
+
+    if ((0.0 > barycentricCoords.x) || (barycentricCoords.x > 1.0) ||
+        (0.0 > barycentricCoords.y) || (barycentricCoords.y > 1.0) ||
+        (barycentricCoords.x + barycentricCoords.y > 1.0)) {
+      return std::nullopt;
+    }
+
+    return t;
+
+  } else {
+    // Linear CCD failed, test if the point is closer than a desired thickness
+    // perpendicular to the triangle normal _at the end of the interval_.
+    glm::vec3 n = glm::normalize(glm::cross(ab1, ac1));
+
+    // TODO: Should we consider points _behind_ the triangle??
+    float thickness = 0.25f;
+    float nDotP = glm::dot(n, ap1);
+    if (nDotP >= 0.0f && nDotP < thickness) {
+      glm::vec3 barycentricCoords = glm::inverse(glm::mat3(ab1, ac1, n)) * ap1;
+
+      if ((0.0 > barycentricCoords.x) || (barycentricCoords.x > 1.0) ||
+          (0.0 > barycentricCoords.y) || (barycentricCoords.y > 1.0) ||
+          (barycentricCoords.x + barycentricCoords.y > 1.0)) {
+        return std::nullopt;
+      }
+
+      return 0.0f;
+    }
+
     return std::nullopt;
   }
-
-  // Now that we have a t-value for the ray-plane intersection, check if
-  // the ray hits the triangle particularly
-  glm::vec3 apt = ap0 + *t * apd;
-  glm::vec3 abt = ab0 + *t * abd;
-  glm::vec3 act = ac0 + *t * acd;
-
-  glm::vec3 n = glm::normalize(glm::cross(abt, act));
-
-  glm::vec3 barycentricCoords = glm::inverse(glm::mat3(abt, act, n)) * apt;
-
-  if ((0.0 > barycentricCoords.x) || (barycentricCoords.x > 1.0) ||
-      (0.0 > barycentricCoords.y) || (barycentricCoords.y > 1.0) ||
-      (barycentricCoords.x + barycentricCoords.y > 1.0)) {
-    return std::nullopt;
-  }
-
-  return t;
 }
 } // namespace CollisionDetection
 } // namespace Pies

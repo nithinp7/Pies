@@ -73,6 +73,7 @@ PointTriangleCollisionConstraint::PointTriangleCollisionConstraint(
 
 void PointTriangleCollisionConstraint::projectToAuxiliaryVariable(
     const std::vector<Node>& nodes) {
+  colliding = false;
 
   const Node& nodeA = nodes[nodeIds[0]];
   const Node& nodeB = nodes[nodeIds[1]];
@@ -103,6 +104,8 @@ void PointTriangleCollisionConstraint::projectToAuxiliaryVariable(
     this->projectedPositions[1] -= disp * wTriSum / wSum;
     this->projectedPositions[2] -= disp * wTriSum / wSum;
     this->projectedPositions[3] -= disp * wTriSum / wSum;
+
+    colliding = true;
   }
 }
 
@@ -134,11 +137,21 @@ void PointTriangleCollisionConstraint::stabilizeCollisions(
     nodeB.position -= disp * wTriSum / wSum;
     nodeC.position -= disp * wTriSum / wSum;
     nodeD.position -= disp * wTriSum / wSum;
+
+    // This prevents spuriously adding velocity to the system
+    nodeA.prevPosition += disp * nodeA.invMass / wSum;
+    nodeB.prevPosition -= disp * wTriSum / wSum;
+    nodeC.prevPosition -= disp * wTriSum / wSum;
+    nodeD.prevPosition -= disp * wTriSum / wSum;
   }
 }
 
 void PointTriangleCollisionConstraint::setupCollisionMatrix(
     Eigen::SparseMatrix<float>& systemMatrix) const {
+  // if (!colliding) {
+  //   return;
+  // }
+
   systemMatrix.coeffRef(nodeIds[0], nodeIds[0]) += this->w;
   systemMatrix.coeffRef(nodeIds[1], nodeIds[1]) += this->w;
   systemMatrix.coeffRef(nodeIds[2], nodeIds[2]) += this->w;
@@ -149,6 +162,9 @@ void PointTriangleCollisionConstraint::setupGlobalForceVector(
     Eigen::MatrixXf& forceVector) const {
   // TODO: How do we make this "unilateral" - is that covered in the projection
   // step?
+  // if (!colliding) {
+  //   return;
+  // }
 
   forceVector.coeffRef(nodeIds[0], 0) += this->w * projectedPositions[0].x;
   forceVector.coeffRef(nodeIds[0], 1) += this->w * projectedPositions[0].y;

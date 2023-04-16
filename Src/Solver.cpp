@@ -253,16 +253,26 @@ void Solver::tickPD(float /*timestep*/) {
       this->_Msn_h2.coeffRef(i, 2) = Msn_h2.z;
     }
 
-    // for (PointTriangleCollisionConstraint& collision : this->_triCollisions)
-    // {
-    //   collision.projectToAuxiliaryVariable(this->_nodes);
-    // }
+  
+    this->_collisionMatrix.setZero();
+    this->_stiffnessAndCollisionMatrix.setZero();
 
-    // for (StaticCollisionConstraint& collision : this->_staticCollisions) {
-    //   const Node& node = this->_nodes[collision.nodeId];
-    //   collision.projectedPosition = node.position;
-    //   collision.projectedPosition.y = this->_options.floorHeight;
-    // }
+    for (const PointTriangleCollisionConstraint& collision :
+          this->_triCollisions) {
+      collision.setupCollisionMatrix(this->_collisionMatrix);
+    }
+
+    for (const StaticCollisionConstraint& collision :
+          this->_staticCollisions) {
+      collision.setupCollisionMatrix(this->_collisionMatrix);
+    }
+
+    this->_stiffnessAndCollisionMatrix =
+        this->_stiffnessMatrix + this->_collisionMatrix;
+    this->_pLltDecomp =
+        std::make_unique<Eigen::SimplicialLLT<Eigen::SparseMatrix<float>>>(
+            this->_stiffnessAndCollisionMatrix);
+
 
     for (uint32_t iter = 0; iter < this->_options.iterations; ++iter) {
       // Construct global force vector and set initial node position estimate
@@ -320,27 +330,15 @@ void Solver::tickPD(float /*timestep*/) {
         constraint.setupGlobalForceVector(this->_forceVector);
       }
 
-      this->_collisionMatrix.setZero();
-      this->_stiffnessAndCollisionMatrix.setZero();
-
       for (const PointTriangleCollisionConstraint& collision :
            this->_triCollisions) {
-        collision.setupCollisionMatrix(this->_collisionMatrix);
         collision.setupGlobalForceVector(this->_forceVector);
       }
 
       for (const StaticCollisionConstraint& collision :
            this->_staticCollisions) {
-        collision.setupCollisionMatrix(this->_collisionMatrix);
         collision.setupGlobalForceVector(this->_forceVector);
       }
-
-      this->_stiffnessAndCollisionMatrix =
-          this->_stiffnessMatrix + this->_collisionMatrix;
-      // TODO: Just for testing, don't solve collision this way.
-      this->_pLltDecomp =
-          std::make_unique<Eigen::SimplicialLLT<Eigen::SparseMatrix<float>>>(
-              this->_stiffnessAndCollisionMatrix);
 
       // Parallelize solving x,y,z coordinates
       // Note: Make sure to offset the starting node index of each thread
@@ -444,7 +442,7 @@ void Solver::tickPD(float /*timestep*/) {
       glm::vec3 normVel = vDotN * n;
       glm::vec3 perpVel = relativeVelocity - normVel;
 
-      float friction = -this->_options.friction;
+      float friction = this->_options.friction;
       if (glm::length(perpVel) < this->_options.staticFrictionThreshold) {
         friction = 1.0f;
       }
@@ -452,7 +450,7 @@ void Solver::tickPD(float /*timestep*/) {
       float triWSum = b.invMass + c.invMass + d.invMass;
       float wSum = a.invMass + triWSum;
 
-      glm::vec3 dv = friction * perpVel - glm::min(vDotN, 0.0f) * n;
+      glm::vec3 dv = -friction * perpVel - glm::min(vDotN, 0.0f) * n;
 
       a.velocity += dv * a.invMass / wSum;
       b.velocity += -dv * triWSum / wSum;
@@ -646,7 +644,7 @@ SpatialHashGridCellRange ccdRange(
     const SpatialHashGrid& grid) {
   float radius = 0.5f * glm::length(pos - prevPos);
   glm::vec3 center = 0.5f * pos + 0.5f * prevPos;
-  float radiusPadding = 2.0f;
+  float radiusPadding = 1.0f;
   float gridLocalRadius = (radius + radiusPadding) / grid.scale;
   glm::vec3 gridLocalPos = center / grid.scale;
   glm::vec3 gridLocalMin = gridLocalPos - glm::vec3(gridLocalRadius);
