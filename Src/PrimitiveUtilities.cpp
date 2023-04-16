@@ -1,6 +1,8 @@
 #include "Node.h"
 #include "Solver.h"
 
+#include <tetgen.h>
+
 #include <cstdlib>
 
 namespace Pies {
@@ -37,11 +39,141 @@ struct Grid {
 };
 } // namespace
 
+void Solver::addNodes(const std::vector<glm::vec3>& vertices) {
+
+  // TODO: parameterize more of these
+  float mass = 1.0f;
+  float radius = 0.5f;
+  glm::vec3 initialVelocity(0.0f);
+
+  glm::vec3 color = randColor();
+  float roughness = randf();
+  float metallic = static_cast<float>(std::rand() % 2);
+
+  size_t currentNodeCount = this->_nodes.size();
+  this->_nodes.reserve(currentNodeCount + vertices.size());
+  for (uint32_t i = 0; i < static_cast<uint32_t>(vertices.size()); ++i) {
+    Node& node = this->_nodes.emplace_back();
+    node.id = currentNodeCount + i;
+    node.position = vertices[i];
+    node.prevPosition = node.position;
+    node.velocity = initialVelocity;
+    node.radius = radius;
+    node.invMass = 1.0f / mass;
+  }
+
+  this->_vertices.resize(this->_nodes.size());
+  for (size_t i = currentNodeCount; i < this->_nodes.size(); ++i) {
+    this->_vertices[i].position = this->_nodes[i].position;
+    this->_vertices[i].radius = this->_nodes[i].radius;
+    this->_vertices[i].baseColor = color;
+    this->_vertices[i].roughness = roughness;
+    this->_vertices[i].metallic = metallic;
+  }
+
+  this->renderStateDirty = true;
+}
+
+void Solver::addTriMeshVolume(
+    const std::vector<glm::vec3>& vertices,
+    const std::vector<uint32_t>& indices,
+    float w) {
+
+  // TODO: parameterize more of these
+  float mass = 1.0f;
+  float radius = 0.5f;
+  glm::vec3 initialVelocity(0.0f);
+
+  glm::vec3 color = randColor();
+  float roughness = randf();
+  float metallic = static_cast<float>(std::rand() % 2);
+
+  tetgenio tetgenInput{};
+  tetgenInput.numberofpoints = static_cast<int>(vertices.size());
+  tetgenInput.pointlist = new double[vertices.size() * 3];
+  for (size_t i = 0; i < vertices.size(); ++i) {
+    const glm::vec3& vertex = vertices[i];
+    tetgenInput.pointlist[3 * i + 0] = vertex.x;
+    tetgenInput.pointlist[3 * i + 1] = vertex.y;
+    tetgenInput.pointlist[3 * i + 2] = vertex.z;
+  }
+
+  // TODO: Is there any advantage to _not_ treating each triangle as its own
+  // face??
+  tetgenInput.numberoffacets = static_cast<int>(indices.size() / 3);
+  tetgenInput.facetlist = new tetgenio::facet[tetgenInput.numberoffacets];
+  for (int i = 0; i < tetgenInput.numberoffacets; ++i) {
+    tetgenio::facet& face = tetgenInput.facetlist[i];
+    face.numberofpolygons = 1;
+    face.polygonlist = new tetgenio::polygon[1];
+
+    face.polygonlist[0].numberofvertices = 3;
+    face.polygonlist[0].vertexlist = new int[3];
+    face.polygonlist[0].vertexlist[0] = indices[3 * i + 0];
+    face.polygonlist[0].vertexlist[1] = indices[3 * i + 1];
+    face.polygonlist[0].vertexlist[2] = indices[3 * i + 2];
+
+    face.numberofholes = 0;
+    face.holelist = nullptr;
+  }
+
+  tetgenio tetgenOutput{};
+  tetgenbehavior behavior{};
+
+  tetrahedralize(&behavior, &tetgenInput, &tetgenOutput);
+
+  // tetgenOutput.tetrahedronlist()
+  size_t existingNodesCount = this->_nodes.size();
+  size_t existingTetsCount = this->_tetConstraints.size();
+
+  this->_nodes.reserve(existingNodesCount + tetgenOutput.numberofpoints);
+  for (int i = 0; i < tetgenOutput.numberofpoints; i++) {
+    Node& node = this->_nodes.emplace_back();
+    node.id = existingNodesCount + i;
+    node.position = glm::vec3(
+        static_cast<float>(tetgenOutput.pointlist[3 * i + 0]),
+        static_cast<float>(tetgenOutput.pointlist[3 * i + 1]),
+        static_cast<float>(tetgenOutput.pointlist[3 * i + 2]));
+    node.prevPosition = node.position;
+    node.velocity = initialVelocity;
+    node.radius = radius;
+    node.invMass = 1.0f / mass;
+  }
+
+  this->_tetConstraints.reserve(
+      existingTetsCount + tetgenOutput.numberoftetrahedra);
+  for (int i = 0; i < tetgenOutput.numberoftetrahedra; ++i) {
+    int v1 = tetgenOutput.tetrahedronlist[4 * i + 0];
+    int v2 = tetgenOutput.tetrahedronlist[4 * i + 1];
+    int v3 = tetgenOutput.tetrahedronlist[4 * i + 2];
+    int v4 = tetgenOutput.tetrahedronlist[4 * i + 3];
+
+    this->_tetConstraints.push_back(createTetrahedralConstraint(
+        this->_constraintId++,
+        w,
+        this->_nodes[existingNodesCount + v1],
+        this->_nodes[existingNodesCount + v2],
+        this->_nodes[existingNodesCount + v3],
+        this->_nodes[existingNodesCount + v4]));
+  }
+
+  this->_vertices.resize(this->_nodes.size());
+  for (size_t i = existingNodesCount; i < this->_nodes.size(); ++i) {
+    this->_vertices[i].position = this->_nodes[i].position;
+    this->_vertices[i].radius = this->_nodes[i].radius;
+    this->_vertices[i].baseColor = color;
+    this->_vertices[i].roughness = roughness;
+    this->_vertices[i].metallic = metallic;
+  }
+
+  this->renderStateDirty = true;
+}
+
 void Solver::createTetBox(
     const glm::vec3& translation,
     float scale,
     const glm::vec3& initialVelocity,
-    float stiffness,
+    float w,
     float mass,
     bool hinged) {
   Grid grid{3, 3, 3};
@@ -109,14 +241,14 @@ void Solver::createTetBox(
         // TODO: consolidate tets and tet constraints
         this->_tetConstraints.push_back(createTetrahedralConstraint(
             this->_constraintId++,
-            stiffness,
+            w,
             this->_nodes[node000],
             this->_nodes[node001],
             this->_nodes[node011],
             this->_nodes[node111]));
         this->_volumeConstraints.push_back(createVolumeConstraint(
             this->_constraintId++,
-            stiffness,
+            w,
             this->_nodes[node000],
             this->_nodes[node001],
             this->_nodes[node011],
@@ -128,14 +260,14 @@ void Solver::createTetBox(
               this->_nodes[node111].id}});
         this->_tetConstraints.push_back(createTetrahedralConstraint(
             this->_constraintId++,
-            stiffness,
+            w,
             this->_nodes[node000],
             this->_nodes[node010],
             this->_nodes[node011],
             this->_nodes[node111]));
         this->_volumeConstraints.push_back(createVolumeConstraint(
             this->_constraintId++,
-            stiffness,
+            w,
             this->_nodes[node000],
             this->_nodes[node010],
             this->_nodes[node011],
@@ -147,14 +279,14 @@ void Solver::createTetBox(
               this->_nodes[node111].id}});
         this->_tetConstraints.push_back(createTetrahedralConstraint(
             this->_constraintId++,
-            stiffness,
+            w,
             this->_nodes[node000],
             this->_nodes[node001],
             this->_nodes[node101],
             this->_nodes[node111]));
         this->_volumeConstraints.push_back(createVolumeConstraint(
             this->_constraintId++,
-            stiffness,
+            w,
             this->_nodes[node000],
             this->_nodes[node001],
             this->_nodes[node101],
@@ -166,14 +298,14 @@ void Solver::createTetBox(
               this->_nodes[node111].id}});
         this->_tetConstraints.push_back(createTetrahedralConstraint(
             this->_constraintId++,
-            stiffness,
+            w,
             this->_nodes[node000],
             this->_nodes[node100],
             this->_nodes[node101],
             this->_nodes[node111]));
         this->_volumeConstraints.push_back(createVolumeConstraint(
             this->_constraintId++,
-            stiffness,
+            w,
             this->_nodes[node000],
             this->_nodes[node100],
             this->_nodes[node101],
@@ -185,14 +317,14 @@ void Solver::createTetBox(
               this->_nodes[node111].id}});
         this->_tetConstraints.push_back(createTetrahedralConstraint(
             this->_constraintId++,
-            stiffness,
+            w,
             this->_nodes[node000],
             this->_nodes[node010],
             this->_nodes[node110],
             this->_nodes[node111]));
         this->_volumeConstraints.push_back(createVolumeConstraint(
             this->_constraintId++,
-            stiffness,
+            w,
             this->_nodes[node000],
             this->_nodes[node010],
             this->_nodes[node110],
@@ -204,14 +336,14 @@ void Solver::createTetBox(
               this->_nodes[node111].id}});
         this->_tetConstraints.push_back(createTetrahedralConstraint(
             this->_constraintId++,
-            stiffness,
+            w,
             this->_nodes[node000],
             this->_nodes[node100],
             this->_nodes[node110],
             this->_nodes[node111]));
         this->_volumeConstraints.push_back(createVolumeConstraint(
             this->_constraintId++,
-            stiffness,
+            w,
             this->_nodes[node000],
             this->_nodes[node100],
             this->_nodes[node110],
@@ -326,10 +458,7 @@ void Solver::createTetBox(
   this->renderStateDirty = true;
 }
 
-void Solver::createBox(
-    const glm::vec3& translation,
-    float scale,
-    float stiffness) {
+void Solver::createBox(const glm::vec3& translation, float scale, float w) {
   Grid grid{5, 5, 5};
 
   size_t currentNodeCount = this->_nodes.size();
@@ -391,7 +520,7 @@ void Solver::createBox(
               this->_constraintId++,
               this->_nodes[node000],
               this->_nodes[node100],
-              stiffness));
+              w));
         }
 
         if (j < (grid.height - 1)) {
@@ -399,7 +528,7 @@ void Solver::createBox(
               this->_constraintId++,
               this->_nodes[node000],
               this->_nodes[node010],
-              stiffness));
+              w));
         }
 
         if (k < (grid.depth - 1)) {
@@ -407,7 +536,7 @@ void Solver::createBox(
               this->_constraintId++,
               this->_nodes[node000],
               this->_nodes[node001],
-              stiffness));
+              w));
         }
 
         // Long diagonal constraints
@@ -417,22 +546,22 @@ void Solver::createBox(
               this->_constraintId++,
               this->_nodes[node000],
               this->_nodes[node111],
-              stiffness));
+              w));
           this->_distanceConstraints.push_back(createDistanceConstraint(
               this->_constraintId++,
               this->_nodes[node100],
               this->_nodes[node011],
-              stiffness));
+              w));
           this->_distanceConstraints.push_back(createDistanceConstraint(
               this->_constraintId++,
               this->_nodes[node010],
               this->_nodes[node101],
-              stiffness));
+              w));
           this->_distanceConstraints.push_back(createDistanceConstraint(
               this->_constraintId++,
               this->_nodes[node001],
               this->_nodes[node110],
-              stiffness));
+              w));
         }
       }
     }
@@ -532,7 +661,7 @@ void Solver::createBox(
   //      i < this->_distanceConstraints.size();
   //      ++i) {
   //   this->_distanceConstraints[i].setWeight(
-  //       1.0f - powf(1.0f - stiffness, 1.0f / this->_options.iterations));
+  //       1.0f - powf(1.0f - w, 1.0f / this->_options.iterations));
   // }
 
   this->_lines.reserve(
@@ -562,7 +691,7 @@ void Solver::createSheet(
     const glm::vec3& translation,
     float scale,
     float mass,
-    float stiffness) {
+    float w) {
   Grid grid{16, 16, 1};
 
   size_t currentNodeCount = this->_nodes.size();
@@ -590,7 +719,7 @@ void Solver::createSheet(
 
       if (i == 0 || i == (grid.width - 1) || j == 0 || j == (grid.height - 1)) {
         this->_positionConstraints.push_back(
-            createPositionConstraint(this->_constraintId++, node, stiffness));
+            createPositionConstraint(this->_constraintId++, node, w));
       }
     }
   }
@@ -612,7 +741,7 @@ void Solver::createSheet(
             this->_constraintId++,
             this->_nodes[node00],
             this->_nodes[node10],
-            stiffness));
+            w));
       }
 
       if (j < (grid.height - 1)) {
@@ -620,7 +749,7 @@ void Solver::createSheet(
             this->_constraintId++,
             this->_nodes[node00],
             this->_nodes[node01],
-            stiffness));
+            w));
       }
 
       // Long diagonal constraints
@@ -629,12 +758,12 @@ void Solver::createSheet(
             this->_constraintId++,
             this->_nodes[node00],
             this->_nodes[node11],
-            stiffness));
+            w));
         this->_distanceConstraints.push_back(createDistanceConstraint(
             this->_constraintId++,
             this->_nodes[node10],
             this->_nodes[node01],
-            stiffness));
+            w));
       }
 
       // TODO: Add constraints for other diagonal
@@ -687,6 +816,13 @@ void Solver::createSheet(
   this->renderStateDirty = true;
 }
 
+namespace {
+struct ShapeMatchingPatch {
+  std::vector<glm::vec3> materialCoords;
+  std::vector<uint32_t> indices;
+};
+} // namespace
+
 void Solver::createShapeMatchingBox(
     const glm::vec3& translation,
     uint32_t countX,
@@ -728,7 +864,7 @@ void Solver::createShapeMatchingBox(
       }
     }
   }
-
+  
   std::vector<uint32_t> nodeIndices(grid.width * grid.height * grid.depth);
   std::vector<glm::vec3> materialCoords(nodeIndices.size());
   for (uint32_t i = 0; i < nodeIndices.size(); ++i) {
@@ -751,12 +887,6 @@ void Solver::createShapeMatchingBox(
   this->renderStateDirty = true;
 }
 
-namespace {
-struct ShapeMatchingPatch {
-  std::vector<glm::vec3> materialCoords;
-  std::vector<uint32_t> indices;
-};
-} // namespace
 
 void Solver::createShapeMatchingSheet(
     const glm::vec3& translation,
@@ -823,6 +953,171 @@ void Solver::createShapeMatchingSheet(
         patch.indices,
         patch.materialCoords,
         w);
+  }
+
+  this->_vertices.resize(this->_nodes.size());
+  for (size_t i = currentNodeCount; i < this->_nodes.size(); ++i) {
+    this->_vertices[i].position = this->_nodes[i].position;
+    this->_vertices[i].radius = this->_nodes[i].radius;
+    this->_vertices[i].baseColor = boxColor;
+    this->_vertices[i].roughness = boxRoughness;
+    this->_vertices[i].metallic = boxMetallic;
+  }
+
+  this->renderStateDirty = true;
+}
+
+
+void Solver::createBendSheet(
+    const glm::vec3& translation,
+    float scale,
+    float w) {
+  Grid grid{10, 10, 1};
+
+  glm::vec3 boxColor = randColor();
+  float boxRoughness = randf();
+  float boxMetallic = static_cast<float>(std::rand() % 2);
+
+  size_t currentNodeCount = this->_nodes.size();
+  size_t currentDistConstraintsCount = this->_distanceConstraints.size();
+  size_t currentBendConstraintsCount = this->_bendConstraints.size();
+  size_t currentLinesCount = this->_lines.size();
+  size_t currentTriCount = this->_triangles.size();
+  this->_nodes.reserve(currentNodeCount + grid.width * grid.height);
+  for (uint32_t i = 0; i < grid.width; ++i) {
+    for (uint32_t j = 0; j < grid.height; ++j) {
+      uint32_t nodeId = grid.gridIdToNodeId(currentNodeCount, {i, j, 0});
+
+      Node& node = this->_nodes.emplace_back();
+      node.id = nodeId;
+      node.position = scale * glm::vec3(i, 0, j) + translation;
+      node.prevPosition = node.position;
+      node.velocity = glm::vec3(0.0f);
+      node.radius = 0.5f * scale;
+      node.invMass = 1.0f;
+
+      if (i < 3) {
+        this->_positionConstraints.push_back(
+            createPositionConstraint(this->_constraintId++, node, w));
+      }
+    }
+  }
+
+  // Add distance constraints in each grid cell
+  this->_distanceConstraints.reserve(
+      currentDistConstraintsCount + 8 * (grid.width - 1) * (grid.height - 1));
+  for (uint32_t i = 0; i < grid.width; ++i) {
+    for (uint32_t j = 0; j < grid.height; ++j) {
+      uint32_t node00 = grid.gridIdToNodeId(currentNodeCount, {i, j, 0});
+      uint32_t node01 = grid.gridIdToNodeId(currentNodeCount, {i, j + 1, 0});
+      uint32_t node10 = grid.gridIdToNodeId(currentNodeCount, {i + 1, j, 0});
+      uint32_t node11 =
+          grid.gridIdToNodeId(currentNodeCount, {i + 1, j + 1, 0});
+
+      // Grid-aligned constraints
+      if (i < (grid.width - 1)) {
+        this->_distanceConstraints.push_back(createDistanceConstraint(
+            this->_constraintId++,
+            this->_nodes[node00],
+            this->_nodes[node10],
+            w));
+      }
+
+      if (j < (grid.height - 1)) {
+        this->_distanceConstraints.push_back(createDistanceConstraint(
+            this->_constraintId++,
+            this->_nodes[node00],
+            this->_nodes[node01],
+            w));
+      }
+
+      // Long diagonal constraints
+      if (i < (grid.width - 1) && j < (grid.height - 1)) {
+        this->_distanceConstraints.push_back(createDistanceConstraint(
+            this->_constraintId++,
+            this->_nodes[node00],
+            this->_nodes[node11],
+            w));
+      }
+    }
+  }
+
+  // TODO: HARD-CODED FOR GRID SIZE
+  // Add distance constraints in each grid cell
+  this->_bendConstraints.reserve(
+      currentBendConstraintsCount + 2 * (grid.width - 1) * (grid.height - 1));
+  for (uint32_t i = 0; i < grid.width; ++i) {
+    for (uint32_t j = 0; j < grid.height; ++j) {
+      uint32_t node00 = grid.gridIdToNodeId(currentNodeCount, {i, j, 0});
+      uint32_t node01 = grid.gridIdToNodeId(currentNodeCount, {i, j + 1, 0});
+      uint32_t node10 = grid.gridIdToNodeId(currentNodeCount, {i + 1, j, 0});
+      uint32_t node11 =
+          grid.gridIdToNodeId(currentNodeCount, {i + 1, j + 1, 0});
+
+      // Diagonal constraints
+      if (i < (grid.width - 1) && j < (grid.height - 1)) {
+        this->_bendConstraints.push_back(createBendConstraint(
+            this->_constraintId++,
+            w,
+            this->_nodes[node00],
+            this->_nodes[node11],
+            this->_nodes[node10],
+            this->_nodes[node01]));
+      }
+
+      if (i < (grid.width - 2) && j < (grid.height - 2)) {
+        uint32_t node02 = grid.gridIdToNodeId(currentNodeCount, {i, j + 2, 0});
+        uint32_t node12 =
+            grid.gridIdToNodeId(currentNodeCount, {i + 1, j + 2, 0});
+        uint32_t node20 = grid.gridIdToNodeId(currentNodeCount, {i + 2, j, 0});
+        uint32_t node21 =
+            grid.gridIdToNodeId(currentNodeCount, {i + 2, j + 1, 0});
+
+        // shared edge to the right of current grid square
+        this->_bendConstraints.push_back(createBendConstraint(
+            this->_constraintId++,
+            w,
+            this->_nodes[node10],
+            this->_nodes[node11],
+            this->_nodes[node00],
+            this->_nodes[node21]));
+
+        // shared edge to the right of current grid square
+        this->_bendConstraints.push_back(createBendConstraint(
+            this->_constraintId++,
+            w,
+            this->_nodes[node01],
+            this->_nodes[node11],
+            this->_nodes[node00],
+            this->_nodes[node12]));
+      }
+    }
+  }
+
+  this->_triangles.reserve(currentTriCount + (2 * grid.width * grid.height));
+  for (uint32_t i = 0; i < grid.width - 1; ++i) {
+    for (uint32_t j = 0; j < grid.height - 1; ++j) {
+      this->_triangles.push_back(
+          {grid.gridIdToNodeId(currentNodeCount, {i, j, 0}),
+           grid.gridIdToNodeId(currentNodeCount, {i + 1, j + 1, 0}),
+           grid.gridIdToNodeId(currentNodeCount, {i + 1, j, 0})});
+
+      this->_triangles.push_back(
+          {grid.gridIdToNodeId(currentNodeCount, {i, j, 0}),
+           grid.gridIdToNodeId(currentNodeCount, {i, j + 1, 0}),
+           grid.gridIdToNodeId(currentNodeCount, {i + 1, j + 1, 0})});
+    }
+  }
+
+  this->_lines.reserve(
+      currentLinesCount +
+      2 * (this->_distanceConstraints.size() - currentDistConstraintsCount));
+  for (size_t i = currentDistConstraintsCount;
+       i < this->_distanceConstraints.size();
+       ++i) {
+    const DistanceConstraint& constraint = this->_distanceConstraints[i];
+    this->_lines.push_back(constraint.getNodeId(0));
+    this->_lines.push_back(constraint.getNodeId(1));
   }
 
   this->_vertices.resize(this->_nodes.size());

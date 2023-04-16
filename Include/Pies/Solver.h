@@ -72,13 +72,20 @@ public:
 
   void clear();
 
+  // Utilities for importing meshes
+  void addNodes(const std::vector<glm::vec3>& vertices);
+  void addTriMeshVolume(
+      const std::vector<glm::vec3>& vertices,
+      const std::vector<uint32_t>& triIndices,
+      float w);
+
   // Utilities for spawning primitives
-  void createBox(const glm::vec3& translation, float scale, float stiffness);
+  void createBox(const glm::vec3& translation, float scale, float w);
   void createTetBox(
       const glm::vec3& translation,
       float scale,
       const glm::vec3& initialVelocity,
-      float stiffness,
+      float w,
       float mass,
       bool hinged);
   void
@@ -96,6 +103,7 @@ public:
       float scale,
       const glm::vec3& initialVelocity,
       float w);
+  void createBendSheet(const glm::vec3& translation, float scale, float w);
 
 private:
   void _computeCollisions();
@@ -135,6 +143,7 @@ private:
   std::vector<TetrahedralConstraint> _tetConstraints;
   std::vector<VolumeConstraint> _volumeConstraints;
   std::vector<ShapeMatchingConstraint> _shapeConstraints;
+  std::vector<BendConstraint> _bendConstraints;
 
   uint32_t _previousNodeCount = 0;
   Eigen::MatrixXf _stateVector;
