@@ -21,15 +21,16 @@ namespace Pies {
 enum class SolverName { PBD, PD };
 
 struct SolverOptions {
-  uint32_t iterations = 8;
-  uint32_t collisionIterations = 0;
-  float collionStiffness = 0.01f;
-  uint32_t timeSubsteps = 1;
+  uint32_t iterations = 14;
+  uint32_t collisionIterations = 1;
+  uint32_t collisionStabilizationIterations = 1;
+  float collionStiffness = 1.0f;
+  uint32_t timeSubsteps = 2;
   float fixedTimestepSize = 0.012f;
   float gravity = 10.0f;
-  float damping = 0.0005f;
-  float friction = 0.f;//8f;
-  float staticFrictionThreshold = 0.f;//2.0f;
+  float damping = 0.001f;
+  float friction = 0.5f;
+  float staticFrictionThreshold = 0.0f;
   float floorHeight = 0.0f;
   float gridSpacing = 1.0f;
   uint32_t threadCount = 8;

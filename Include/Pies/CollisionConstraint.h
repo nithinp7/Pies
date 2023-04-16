@@ -33,7 +33,7 @@ struct PointTriangleCollisionConstraint {
   uint32_t nodeIds[4];
   glm::vec3 projectedPositions[4];
   glm::vec3 n;
-  bool colliding = false;
+  float thickness = 0.1f;
 
   PointTriangleCollisionConstraint(
       const Node& a,
@@ -42,6 +42,7 @@ struct PointTriangleCollisionConstraint {
       const Node& d);
 
   void projectToAuxiliaryVariable(const std::vector<Node>& nodes);
+  void stabilizeCollisions(std::vector<Node>& nodes);
   void setupCollisionMatrix(Eigen::SparseMatrix<float>& systemMatrix) const;
   void setupGlobalForceVector(Eigen::MatrixXf& forceVector) const;
 };

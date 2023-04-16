@@ -1,5 +1,7 @@
 #include "Solver.h"
 
+#include "CollisionDetection.h"
+
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <cstdint>
@@ -212,10 +214,11 @@ void Solver::tickPD(float /*timestep*/) {
     for (uint32_t i = 0; i < nodeCount; ++i) {
       Node& node = this->_nodes[i];
       // Construct momentum estimate for qn+1
-      node.position += h * node.velocity + h2 * node.force * node.invMass;
+      node.position += h * node.velocity;
     }
 
     this->_parallelPointTriangleCollisions();
+#if 1
     for (uint32_t collisionIter = 0;
          collisionIter < this->_options.collisionIterations;
          ++collisionIter) {
@@ -232,12 +235,7 @@ void Solver::tickPD(float /*timestep*/) {
       }
 
       for (PointTriangleCollisionConstraint& collision : this->_triCollisions) {
-        collision.projectToAuxiliaryVariable(this->_nodes);
-        for (uint32_t i = 0; i < 4; ++i) {
-          Node& node = this->_nodes[collision.nodeIds[i]];
-          node.position += this->_options.collionStiffness *
-                           (collision.projectedPositions[i] - node.position);
-        }
+        collision.stabilizeCollisions(this->_nodes);
       }
 
       for (StaticCollisionConstraint& collision : this->_staticCollisions) {
@@ -245,6 +243,7 @@ void Solver::tickPD(float /*timestep*/) {
         this->_nodes[collision.nodeId].position = collision.projectedPosition;
       }
     }
+#endif
 
     for (uint32_t i = 0; i < nodeCount; ++i) {
       const Node& node = this->_nodes[i];
@@ -253,6 +252,17 @@ void Solver::tickPD(float /*timestep*/) {
       this->_Msn_h2.coeffRef(i, 1) = Msn_h2.y;
       this->_Msn_h2.coeffRef(i, 2) = Msn_h2.z;
     }
+
+    // for (PointTriangleCollisionConstraint& collision : this->_triCollisions)
+    // {
+    //   collision.projectToAuxiliaryVariable(this->_nodes);
+    // }
+
+    // for (StaticCollisionConstraint& collision : this->_staticCollisions) {
+    //   const Node& node = this->_nodes[collision.nodeId];
+    //   collision.projectedPosition = node.position;
+    //   collision.projectedPosition.y = this->_options.floorHeight;
+    // }
 
     for (uint32_t iter = 0; iter < this->_options.iterations; ++iter) {
       // Construct global force vector and set initial node position estimate
@@ -325,10 +335,6 @@ void Solver::tickPD(float /*timestep*/) {
         collision.setupGlobalForceVector(this->_forceVector);
       }
 
-      // this->_computeCollisions();
-      // this->_parallelComputeCollisions();
-      // this->_parallelPointTriangleCollisions();
-
       this->_stiffnessAndCollisionMatrix =
           this->_stiffnessMatrix + this->_collisionMatrix;
       // TODO: Just for testing, don't solve collision this way.
@@ -352,31 +358,12 @@ void Solver::tickPD(float /*timestep*/) {
       }
     }
 
-#if 0
-    // this->_parallelComputeCollisions();
-    // this->_parallelPointTriangleCollisions();
     for (uint32_t collisionIter = 0;
-         collisionIter < this->_options.collisionIterations;
+         collisionIter < this->_options.collisionStabilizationIterations;
          ++collisionIter) {
-      // this->_parallelComputeCollisions();
-      // this->_parallelPointTriangleCollisions();
-      for (CollisionConstraint& collision : this->_collisions) {
-        collision.projectToAuxiliaryVariable(this->_nodes);
-        Node& nodeA = this->_nodes[collision.nodeIds[0]];
-        Node& nodeB = this->_nodes[collision.nodeIds[1]];
-        nodeA.position += this->_options.collionStiffness *
-                          (collision.projectedPositions[0] - nodeA.position);
-        nodeB.position += this->_options.collionStiffness *
-                          (collision.projectedPositions[1] - nodeB.position);
-      }
 
       for (PointTriangleCollisionConstraint& collision : this->_triCollisions) {
-        collision.projectToAuxiliaryVariable(this->_nodes);
-        for (uint32_t i = 0; i < 4; ++i) {
-          Node& node = this->_nodes[collision.nodeIds[i]];
-          node.position += this->_options.collionStiffness *
-                           (collision.projectedPositions[i] - node.position);
-        }
+        collision.stabilizeCollisions(this->_nodes);
       }
 
       for (StaticCollisionConstraint& collision : this->_staticCollisions) {
@@ -384,17 +371,17 @@ void Solver::tickPD(float /*timestep*/) {
         this->_nodes[collision.nodeId].position = collision.projectedPosition;
       }
     }
-#endif
 
     // Update node velocities
     for (uint32_t i = 0; i < nodeCount; ++i) {
       Node& node = this->_nodes[i];
       node.velocity = (1.0f - this->_options.damping) *
-                      (node.position - node.prevPosition) / h;
+                          (node.position - node.prevPosition) / h +
+                      h * node.force * node.invMass;
 
       node.prevPosition = node.position;
       this->_vertices[i].position = node.position;
-      this->_vertices[i].baseColor = glm::vec3(0.0f, 1.0f, 0.0f);
+      // this->_vertices[i].baseColor = glm::vec3(0.0f, 1.0f, 0.0f);
     }
 
     // Update friction
@@ -433,14 +420,14 @@ void Solver::tickPD(float /*timestep*/) {
     // Update friction
     for (const PointTriangleCollisionConstraint& collision :
          this->_triCollisions) {
-      if (!collision.colliding) {
-        continue;
-      }
+      // if (!collision.colliding) {
+      //   continue;
+      // }
 
-      for (uint32_t i = 0; i < 4; ++i) {
-        this->_vertices[collision.nodeIds[i]].baseColor =
-            glm::vec3(1.0f, 0.0f, 0.0f);
-      }
+      // for (uint32_t i = 0; i < 4; ++i) {
+      //   this->_vertices[collision.nodeIds[i]].baseColor =
+      //       glm::vec3(1.0f, 0.0f, 0.0f);
+      // }
 
       Node& a = this->_nodes[collision.nodeIds[0]];
       Node& b = this->_nodes[collision.nodeIds[1]];
@@ -453,19 +440,24 @@ void Solver::tickPD(float /*timestep*/) {
           glm::cross(c.position - b.position, d.position - b.position));
 
       glm::vec3 relativeVelocity = a.velocity - avgTriVelocity;
-      glm::vec3 perpVel = relativeVelocity - glm::dot(relativeVelocity, n) * n;
+      float vDotN = glm::dot(relativeVelocity, n);
+      glm::vec3 normVel = vDotN * n;
+      glm::vec3 perpVel = relativeVelocity - normVel;
 
       float friction = -this->_options.friction;
       if (glm::length(perpVel) < this->_options.staticFrictionThreshold) {
         friction = 1.0f;
       }
 
-      float wSum = a.invMass + b.invMass + c.invMass + d.invMass;
+      float triWSum = b.invMass + c.invMass + d.invMass;
+      float wSum = a.invMass + triWSum;
 
-      a.velocity += friction * perpVel * a.invMass / wSum;
-      b.velocity += -friction * perpVel * b.invMass / wSum;
-      c.velocity += -friction * perpVel * c.invMass / wSum;
-      d.velocity += -friction * perpVel * d.invMass / wSum;
+      glm::vec3 dv = friction * perpVel - glm::min(vDotN, 0.0f) * n;
+
+      a.velocity += dv * a.invMass / wSum;
+      b.velocity += -dv * triWSum / wSum;
+      c.velocity += -dv * triWSum / wSum;
+      d.velocity += -dv * triWSum / wSum;
     }
 
     for (const StaticCollisionConstraint& collision : this->_staticCollisions) {
@@ -744,6 +736,20 @@ void Solver::_parallelPointTriangleCollisions() {
           const Node& nodeB = nodes[pTriangle->nodeIds[0]];
           const Node& nodeC = nodes[pTriangle->nodeIds[1]];
           const Node& nodeD = nodes[pTriangle->nodeIds[2]];
+
+          std::optional<float> optT = CollisionDetection::linearCCD(
+              nodeA.prevPosition - nodeB.prevPosition,
+              nodeC.prevPosition - nodeB.prevPosition,
+              nodeD.prevPosition - nodeB.prevPosition,
+              nodeA.position - nodeB.position,
+              nodeC.position - nodeB.position,
+              nodeD.position - nodeB.position);
+
+          if (!optT) {
+            // CCD did not find intersection
+            // TODO: Still should resolve static collisions?
+            continue;
+          }
 
           data.triCollisions.emplace_back(nodeA, nodeB, nodeC, nodeD);
         }

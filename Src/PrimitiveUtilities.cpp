@@ -47,7 +47,7 @@ void Solver::createTetBox(
   Grid grid{3, 3, 3};
 
   if (hinged) {
-    grid = Grid{15, 2, 2};
+    grid = Grid{15, 15, 2};
   }
 
   size_t currentNodeCount = this->_nodes.size();
@@ -563,7 +563,7 @@ void Solver::createSheet(
     float scale,
     float mass,
     float stiffness) {
-  Grid grid{4, 4, 1};
+  Grid grid{16, 16, 1};
 
   size_t currentNodeCount = this->_nodes.size();
   size_t currentDistConstraintsCount = this->_distanceConstraints.size();

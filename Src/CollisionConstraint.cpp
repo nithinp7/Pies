@@ -1,6 +1,7 @@
 #include "CollisionConstraint.h"
 
 #include <algorithm>
+#include <optional>
 
 namespace Pies {
 CollisionConstraint::CollisionConstraint(const Node& a, const Node& b)
@@ -72,7 +73,6 @@ PointTriangleCollisionConstraint::PointTriangleCollisionConstraint(
 
 void PointTriangleCollisionConstraint::projectToAuxiliaryVariable(
     const std::vector<Node>& nodes) {
-  this->colliding = false;
 
   const Node& nodeA = nodes[nodeIds[0]];
   const Node& nodeB = nodes[nodeIds[1]];
@@ -84,91 +84,61 @@ void PointTriangleCollisionConstraint::projectToAuxiliaryVariable(
   this->projectedPositions[2] = nodeC.position;
   this->projectedPositions[3] = nodeD.position;
 
-  // TODO: Apply this to the point displacement to roughly approx
-  // 2-way linear CCD
-  glm::vec3 avgTriDisp = ((nodeB.position - nodeB.prevPosition) +
-                          (nodeC.position - nodeC.prevPosition) +
-                          (nodeD.position - nodeD.prevPosition)) /
-                         3.0f;
-  glm::vec3 prevPoint = nodeA.prevPosition + avgTriDisp;
+  glm::vec3 c = nodeC.position - nodeB.position;
+  glm::vec3 d = nodeD.position - nodeB.position;
+  glm::vec3 p = nodeA.position - nodeB.position;
 
-  glm::vec3 bc = nodeC.position - nodeB.position;
-  glm::vec3 bd = nodeD.position - nodeB.position;
-  glm::vec3 ba0 = prevPoint - nodeB.position;
-  glm::vec3 ba1 = nodeA.position - nodeB.position;
-  glm::vec3 n = glm::cross(bc, bd);
-  float n_magSq = glm::dot(n, n);
-  if (n_magSq < 0.0001f) {
-    return;
+  glm::vec3 n = glm::normalize(glm::cross(
+      nodeC.position - nodeB.position,
+      nodeD.position - nodeB.position));
+
+  float nDotP = glm::dot(n, p);
+  if (nDotP < thickness) {
+    glm::vec3 disp = (thickness - nDotP) * n;
+
+    float wTriSum = nodeB.invMass + nodeC.invMass + nodeD.invMass;
+    float wSum = nodeA.invMass + wTriSum;
+
+    this->projectedPositions[0] += disp * nodeA.invMass / wSum;
+    this->projectedPositions[1] -= disp * wTriSum / wSum;
+    this->projectedPositions[2] -= disp * wTriSum / wSum;
+    this->projectedPositions[3] -= disp * wTriSum / wSum;
   }
+}
 
-  this->n /= std::sqrt(n_magSq);
+void PointTriangleCollisionConstraint::stabilizeCollisions(
+    std::vector<Node>& nodes) {
+  Node& nodeA = nodes[nodeIds[0]];
+  Node& nodeB = nodes[nodeIds[1]];
+  Node& nodeC = nodes[nodeIds[2]];
+  Node& nodeD = nodes[nodeIds[3]];
 
-  float ba0_n = glm::dot(ba0, n);
-  float ba1_n = glm::dot(ba1, n);
+  // If the point is behind the triangle but within a desired thickness
+  // just push it out.
+  glm::vec3 c = nodeC.position - nodeB.position;
+  glm::vec3 d = nodeD.position - nodeB.position;
+  glm::vec3 p = nodeA.position - nodeB.position;
 
-  glm::vec3 lineSegment = nodeA.position - prevPoint;
-  float lineLength = glm::length(lineSegment);
+  glm::vec3 n = glm::normalize(glm::cross(
+      nodeC.position - nodeB.position,
+      nodeD.position - nodeB.position));
 
-  glm::vec3 disp;
-  float thickness = 0.5f;
+  float nDotP = glm::dot(n, p);
+  if (nDotP < thickness) {
+    glm::vec3 disp = (thickness - nDotP) * n;
 
-  if (lineLength > 0.0001f && ba0_n > 0.0f && ba1_n < 0.0f) {
-    // Check if the line segment crosses the triangle plane at all.
+    float wTriSum = nodeB.invMass + nodeC.invMass + nodeD.invMass;
+    float wSum = nodeA.invMass + wTriSum;
 
-    glm::vec3 dir = lineSegment / lineLength;
-
-    // if (std::abs(glm::dot(n, dir)) < 0.0001f) {
-    //   pushAway = true;
-    // } else {
-    glm::vec3 barycentricCoords = glm::inverse(glm::mat3(bc, bd, dir)) * ba1;
-
-    if ((0.0 > barycentricCoords.x) || (barycentricCoords.x > 1.0) ||
-        (0.0 > barycentricCoords.y) || (barycentricCoords.y > 1.0) ||
-        (barycentricCoords.x + barycentricCoords.y > 1.0)) {
-      return;
-    }
-
-    // glm::vec3 impactPos = nodeA.prevPosition + barycentricCoords.z *
-    // dir;
-    disp = -(barycentricCoords.z + thickness) * dir;
-    // }
-  } else {
-    if (std::abs(ba1_n) >= thickness) {
-      return;
-    }
-
-    glm::vec3 barycentricCoords = glm::inverse(glm::mat3(bc, bd, n)) * ba1;
-
-    if ((0.0 > barycentricCoords.x) || (barycentricCoords.x > 1.0) ||
-        (0.0 > barycentricCoords.y) || (barycentricCoords.y > 1.0) ||
-        (barycentricCoords.x + barycentricCoords.y > 1.0)) {
-      return;
-    }
-
-    // if (ba1_n < 0.0) {
-    //   disp = -(thickness + ba1_n) * n;
-    // } else {
-      disp = (thickness - ba1_n) * n;
-    // }
+    nodeA.position += disp * nodeA.invMass / wSum;
+    nodeB.position -= disp * wTriSum / wSum;
+    nodeC.position -= disp * wTriSum / wSum;
+    nodeD.position -= disp * wTriSum / wSum;
   }
-
-  float wSum = nodeA.invMass + nodeB.invMass + nodeC.invMass + nodeD.invMass;
-
-  this->projectedPositions[0] += disp * nodeA.invMass / wSum;
-  this->projectedPositions[1] -= disp * nodeB.invMass / wSum;
-  this->projectedPositions[2] -= disp * nodeC.invMass / wSum;
-  this->projectedPositions[3] -= disp * nodeD.invMass / wSum;
-
-  this->colliding = true;
 }
 
 void PointTriangleCollisionConstraint::setupCollisionMatrix(
     Eigen::SparseMatrix<float>& systemMatrix) const {
-  if (!this->colliding) {
-    return;
-  }
-
   systemMatrix.coeffRef(nodeIds[0], nodeIds[0]) += this->w;
   systemMatrix.coeffRef(nodeIds[1], nodeIds[1]) += this->w;
   systemMatrix.coeffRef(nodeIds[2], nodeIds[2]) += this->w;
@@ -177,10 +147,8 @@ void PointTriangleCollisionConstraint::setupCollisionMatrix(
 
 void PointTriangleCollisionConstraint::setupGlobalForceVector(
     Eigen::MatrixXf& forceVector) const {
-  // TODO: Do we need to declar no alias for projectedPositions or nodeIds??
-  if (!this->colliding) {
-    return;
-  }
+  // TODO: How do we make this "unilateral" - is that covered in the projection
+  // step?
 
   forceVector.coeffRef(nodeIds[0], 0) += this->w * projectedPositions[0].x;
   forceVector.coeffRef(nodeIds[0], 1) += this->w * projectedPositions[0].y;
