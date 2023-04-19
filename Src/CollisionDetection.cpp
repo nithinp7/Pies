@@ -142,12 +142,13 @@ std::optional<float> linearCCD(
     return t;
 
   } else {
+    // return std::nullopt;
     // Linear CCD failed, test if the point is closer than a desired thickness
     // perpendicular to the triangle normal _at the end of the interval_.
     glm::vec3 n = glm::normalize(glm::cross(ab1, ac1));
 
     // TODO: Should we consider points _behind_ the triangle??
-    float thickness = 0.25f;
+    float thickness = 0.4f;
     float nDotP = glm::dot(n, ap1);
     if (nDotP >= 0.0f && nDotP < thickness) {
       glm::vec3 barycentricCoords = glm::inverse(glm::mat3(ab1, ac1, n)) * ap1;

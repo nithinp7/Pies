@@ -20,7 +20,8 @@ void DistanceConstraintProjection::operator()(
     dir = diff / dist;
   }
 
-  float disp = this->targetDistance - dist;//glm::min(this->targetDistance - dist, 0.0f);
+  float disp = this->targetDistance -
+               dist; // glm::min(this->targetDistance - dist, 0.0f);
 
   float wSum = a.invMass + b.invMass;
 
@@ -221,10 +222,8 @@ void BendConstraintProjection::operator()(
   projected[2] = x3.position;
   projected[3] = x4.position;
 
-  glm::vec3 q3 =
-      (glm::cross(p2, n2) + (glm::cross(n1, p2) * d)) / p2Xp3_len;
-  glm::vec3 q4 =
-      (glm::cross(p2, n1) + (glm::cross(n2, p2) * d)) / p2Xp4_len;
+  glm::vec3 q3 = (glm::cross(p2, n2) + (glm::cross(n1, p2) * d)) / p2Xp3_len;
+  glm::vec3 q4 = (glm::cross(p2, n1) + (glm::cross(n2, p2) * d)) / p2Xp4_len;
   glm::vec3 q2 =
       -((glm::cross(p3, n2) + (glm::cross(n1, p3) * d)) / p2Xp3_len) -
       ((glm::cross(p4, n1) + (glm::cross(n2, p4) * d)) / p2Xp4_len);
