@@ -262,17 +262,15 @@ void Solver::tickPD(float /*timestep*/) {
       this->_Msn_h2.coeffRef(i, 2) = Msn_h2.z;
     }
 
-  
     this->_collisionMatrix.setZero();
     this->_stiffnessAndCollisionMatrix.setZero();
 
     for (const PointTriangleCollisionConstraint& collision :
-          this->_triCollisions) {
+         this->_triCollisions) {
       collision.setupCollisionMatrix(this->_collisionMatrix);
     }
 
-    for (const StaticCollisionConstraint& collision :
-          this->_staticCollisions) {
+    for (const StaticCollisionConstraint& collision : this->_staticCollisions) {
       collision.setupCollisionMatrix(this->_collisionMatrix);
     }
 
@@ -281,7 +279,6 @@ void Solver::tickPD(float /*timestep*/) {
     this->_pLltDecomp =
         std::make_unique<Eigen::SimplicialLLT<Eigen::SparseMatrix<float>>>(
             this->_stiffnessAndCollisionMatrix);
-
 
     for (uint32_t iter = 0; iter < this->_options.iterations; ++iter) {
       // Construct global force vector and set initial node position estimate
@@ -300,7 +297,7 @@ void Solver::tickPD(float /*timestep*/) {
       for (TetrahedralConstraint& constraint : this->_tetConstraints) {
         constraint.projectToAuxiliaryVariable(this->_nodes);
       }
-      
+
       for (BendConstraint& constraint : this->_bendConstraints) {
         constraint.projectToAuxiliaryVariable(this->_nodes);
       }
@@ -683,6 +680,46 @@ SpatialHashGridCellRange ccdRange(
 
   return range;
 }
+
+SpatialHashGridCellRange sweptTriRange(
+    const Triangle& triangle,
+    const std::vector<Node>& nodes,
+    const SpatialHashGrid& grid) {
+  const Node& n1 = nodes[triangle.nodeIds[0]];
+  const Node& n2 = nodes[triangle.nodeIds[1]];
+  const Node& n3 = nodes[triangle.nodeIds[2]];
+
+  glm::vec3 max = n1.position;
+  glm::vec3 min = n1.position;
+
+  for (uint32_t i = 0; i < 3; ++i) {
+    const Node& node = nodes[triangle.nodeIds[i]];
+    max = glm::max(node.position, max);
+    max = glm::max(node.prevPosition, max);
+
+    min = glm::min(node.position, min);
+    min = glm::min(node.prevPosition, min);
+  }
+
+  glm::vec3 x1 = nodes[triangle.nodeIds[0]].position / grid.scale;
+  glm::vec3 x2 = nodes[triangle.nodeIds[1]].position / grid.scale;
+  glm::vec3 x3 = nodes[triangle.nodeIds[2]].position / grid.scale;
+
+  SpatialHashGridCellRange range{};
+  range.minX = static_cast<int64_t>(glm::floor(min.x));
+  range.minY = static_cast<int64_t>(glm::floor(min.y));
+  range.minZ = static_cast<int64_t>(glm::floor(min.z));
+
+  range.lengthX = static_cast<uint32_t>(glm::ceil(max.x) - range.minX);
+  range.lengthY = static_cast<uint32_t>(glm::ceil(max.y) - range.minY);
+  range.lengthZ = static_cast<uint32_t>(glm::ceil(max.z) - range.minZ);
+
+  if (range.lengthX > 50 || range.lengthY > 50 || range.lengthZ > 50) {
+    return {};
+  }
+
+  return range;
+}
 } // namespace
 
 void Solver::_parallelPointTriangleCollisions() {
@@ -701,6 +738,7 @@ void Solver::_parallelPointTriangleCollisions() {
 
   // Detect and resolve collisions
   auto fnComputeCollisions = [&nodes = this->_nodes,
+                              &triangles = this->_triangles,
                               threadCount = this->_options.threadCount,
                               &spatialHash = this->_spatialHashTris,
                               &threadData = this->_threadData,
@@ -714,12 +752,14 @@ void Solver::_parallelPointTriangleCollisions() {
     data.triCollisions.clear();
     data.staticCollisions.clear();
 
-    for (size_t nodeId = threadId; nodeId < nodes.size();
-         nodeId += threadCount) {
-      const Node& nodeA = nodes[nodeId];
+    for (size_t triId = threadId; triId < triangles.size();
+         triId += threadCount) {
+      const Triangle& tri = triangles[triId];
 
       SpatialHashGridCellRange range =
-          ccdRange(nodeA.prevPosition, nodeA.position, spatialHash.getGrid());
+          sweptTriRange(tri, nodes, spatialHash.getGrid());
+      //     ccdRange(nodeA.prevPosition, nodeA.position,
+      //     spatialHash.getGrid());
 
       for (uint32_t dx = 0; dx < range.lengthX; ++dx) {
         for (uint32_t dy = 0; dy < range.lengthY; ++dy) {
@@ -741,41 +781,57 @@ void Solver::_parallelPointTriangleCollisions() {
 
       for (const SpatialHashGridCellBucket<Triangle>* pBucket : buckets) {
         // Check all triangles in the bucket
-        for (const Triangle* pTriangle : pBucket->values) {
-          if (nodeId == pTriangle->nodeIds[0] ||
-              nodeId == pTriangle->nodeIds[1] ||
-              nodeId == pTriangle->nodeIds[2]) {
+        for (const Triangle* pOtherTri : pBucket->values) {
+          bool containsCommonNode = false;
+          // TODO: Is there any case where we want to collide between two
+          // connected triangles??
+          for (uint32_t i = 0; i < 3; ++i) {
+            for (uint32_t j = 0; j < 3; ++j) {
+              if (tri.nodeIds[i] == pOtherTri->nodeIds[j]) {
+                containsCommonNode = true;
+              }
+            }
+          }
+
+          if (containsCommonNode) {
             continue;
           }
 
-          const Node& nodeB = nodes[pTriangle->nodeIds[0]];
-          const Node& nodeC = nodes[pTriangle->nodeIds[1]];
-          const Node& nodeD = nodes[pTriangle->nodeIds[2]];
+          const Node& nodeB = nodes[pOtherTri->nodeIds[0]];
+          const Node& nodeC = nodes[pOtherTri->nodeIds[1]];
+          const Node& nodeD = nodes[pOtherTri->nodeIds[2]];
 
-          std::optional<float> optT = CollisionDetection::linearCCD(
-              nodeA.prevPosition - nodeB.prevPosition,
-              nodeC.prevPosition - nodeB.prevPosition,
-              nodeD.prevPosition - nodeB.prevPosition,
-              nodeA.position - nodeB.position,
-              nodeC.position - nodeB.position,
-              nodeD.position - nodeB.position);
+          // Point-triangle collisions
+          for (uint32_t i = 0; i < 3; ++i) {
+            const Node& nodeA = nodes[tri.nodeIds[i]];
 
-          if (!optT) {
-            // CCD did not find intersection
-            // TODO: Still should resolve static collisions?
-            continue;
+            std::optional<float> optT = CollisionDetection::linearCCD(
+                nodeA.prevPosition - nodeB.prevPosition,
+                nodeC.prevPosition - nodeB.prevPosition,
+                nodeD.prevPosition - nodeB.prevPosition,
+                nodeA.position - nodeB.position,
+                nodeC.position - nodeB.position,
+                nodeD.position - nodeB.position);
+
+            if (!optT) {
+              // CCD did not find intersection
+              continue;
+            }
+
+            data.triCollisions.emplace_back(nodeA, nodeB, nodeC, nodeD);
           }
-
-          data.triCollisions.emplace_back(nodeA, nodeB, nodeC, nodeD);
         }
       }
 
       buckets.clear();
 
-      if (nodeA.position.y < floorHeight) {
-        data.staticCollisions.emplace_back(
-            nodeA,
-            glm::vec3(nodeA.position.x, floorHeight, nodeA.position.z));
+      for (uint32_t i = 0; i < 3; ++i) {
+        const Node& node = nodes[tri.nodeIds[i]];
+        if (node.position.y < floorHeight) {
+          data.staticCollisions.emplace_back(
+              node,
+              glm::vec3(node.position.x, floorHeight, node.position.z));
+        }
       }
     }
   };

@@ -48,6 +48,26 @@ struct PointTriangleCollisionConstraint {
   void setupGlobalForceVector(Eigen::MatrixXf& forceVector) const;
 };
 
+// struct EdgeCollisionConstraint {
+//   float w = 100000.0f;
+//   uint32_t nodeIds[4];
+//   glm::vec3 projectedPositions[4];
+//   glm::vec3 n;
+//   float thickness = 0.1f;
+//   bool colliding = false;
+
+//   PointTriangleCollisionConstraint(
+//       const Node& a,
+//       const Node& b,
+//       const Node& c,
+//       const Node& d);
+
+//   void projectToAuxiliaryVariable(const std::vector<Node>& nodes);
+//   void stabilizeCollisions(std::vector<Node>& nodes);
+//   void setupCollisionMatrix(Eigen::SparseMatrix<float>& systemMatrix) const;
+//   void setupGlobalForceVector(Eigen::MatrixXf& forceVector) const;
+// };
+
 struct StaticCollisionConstraint {
   float w = 10000.0f;
   uint32_t nodeId;

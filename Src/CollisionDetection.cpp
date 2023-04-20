@@ -108,20 +108,32 @@ std::optional<float> linearCCD(
     const glm::vec3& ap1,
     const glm::vec3& ab1,
     const glm::vec3& ac1) {
+
+  // Early check to see if the point ever crosses the triangle plane
+  // Assumes normal doesn't rotate significantly over the short interval.
+  glm::vec3 n0 = glm::normalize(glm::cross(ab0, ac0));
+  glm::vec3 n1 = glm::normalize(glm::cross(ab1, ac1));
+  float nDotP0 = glm::dot(n0, ap0);
+  float nDotP1 = glm::dot(n1, ap1);
+
   glm::vec3 apd = ap1 - ap0;
   glm::vec3 abd = ab1 - ab0;
   glm::vec3 acd = ac1 - ac0;
 
-  // Look for a ray-plane intersection throughout the interval
-  CubicExpression expression{};
-  expandTerm(ap0.x, ab0.y, ac0.z, apd.x, abd.y, acd.z, expression);
-  expandTerm(-ap0.x, ac0.y, ab0.z, -apd.x, acd.y, abd.z, expression);
-  expandTerm(-ab0.x, ap0.y, ac0.z, -abd.x, apd.y, acd.z, expression);
-  expandTerm(ab0.x, ac0.y, ap0.z, abd.x, acd.y, apd.z, expression);
-  expandTerm(ac0.x, ap0.y, ab0.z, acd.x, apd.y, abd.z, expression);
-  expandTerm(-ac0.x, ab0.y, ap0.z, -acd.x, abd.y, apd.z, expression);
+  std::optional<float> t = std::nullopt;
+  if (nDotP0 * nDotP1 < 0.0f) { 
+    // Look for a ray-plane intersection throughout the interval
+    CubicExpression expression{};
+    expandTerm(ap0.x, ab0.y, ac0.z, apd.x, abd.y, acd.z, expression);
+    expandTerm(-ap0.x, ac0.y, ab0.z, -apd.x, acd.y, abd.z, expression);
+    expandTerm(-ab0.x, ap0.y, ac0.z, -abd.x, apd.y, acd.z, expression);
+    expandTerm(ab0.x, ac0.y, ap0.z, abd.x, acd.y, apd.z, expression);
+    expandTerm(ac0.x, ap0.y, ab0.z, acd.x, apd.y, abd.z, expression);
+    expandTerm(-ac0.x, ab0.y, ap0.z, -acd.x, abd.y, apd.z, expression);
 
-  std::optional<float> t = expression.findRootInInterval();
+    t = expression.findRootInInterval();
+  }
+
   if (t) {
     // Now that we have a t-value for the ray-plane intersection, check if
     // the ray hits the triangle particularly
@@ -140,18 +152,14 @@ std::optional<float> linearCCD(
     }
 
     return t;
-
   } else {
-    // return std::nullopt;
     // Linear CCD failed, test if the point is closer than a desired thickness
     // perpendicular to the triangle normal _at the end of the interval_.
-    glm::vec3 n = glm::normalize(glm::cross(ab1, ac1));
 
     // TODO: Should we consider points _behind_ the triangle??
     float thickness = 0.4f;
-    float nDotP = glm::dot(n, ap1);
-    if (nDotP >= 0.0f && nDotP < thickness) {
-      glm::vec3 barycentricCoords = glm::inverse(glm::mat3(ab1, ac1, n)) * ap1;
+    if (nDotP1 >= 0.0f && nDotP1 < thickness) {
+      glm::vec3 barycentricCoords = glm::inverse(glm::mat3(ab1, ac1, n1)) * ap1;
 
       if ((0.0 > barycentricCoords.x) || (barycentricCoords.x > 1.0) ||
           (0.0 > barycentricCoords.y) || (barycentricCoords.y > 1.0) ||

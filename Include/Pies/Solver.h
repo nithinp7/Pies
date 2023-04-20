@@ -28,11 +28,11 @@ struct SolverOptions {
   uint32_t timeSubsteps = 1;
   float fixedTimestepSize = 0.012f;
   float gravity = 10.0f;
-  float damping = 0.005f;
-  float friction = 0.025f;//1f;
+  float damping = 0.001f;
+  float friction = 0.001f;//1f;
   float staticFrictionThreshold = 0.f;//1.0f;
   float floorHeight = 0.0f;
-  float gridSpacing = 1.0f;
+  float gridSpacing = 2.0f;
   uint32_t threadCount = 8;
   SolverName solver = SolverName::PD;
 };
