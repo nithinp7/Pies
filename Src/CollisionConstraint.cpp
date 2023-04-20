@@ -69,7 +69,18 @@ PointTriangleCollisionConstraint::PointTriangleCollisionConstraint(
     const Node& b,
     const Node& c,
     const Node& d)
-    : nodeIds{a.id, b.id, c.id, d.id}, n(0.0f) {}
+    : nodeIds{a.id, b.id, c.id, d.id}, n(0.0f) {
+    Eigen::Matrix4f A = Eigen::Matrix4f::Zero();
+    A.coeffRef(1, 0) = -1.0f;
+    A.coeffRef(2, 0) = -1.0f;
+    A.coeffRef(3, 0) = -1.0f;
+
+    A.coeffRef(1, 1) = 1.0f;
+    A.coeffRef(2, 2) = 1.0f;
+    A.coeffRef(3, 3) = 1.0f;
+
+    this->AtA = A.transpose() * A;
+  }
 
 void PointTriangleCollisionConstraint::projectToAuxiliaryVariable(
     const std::vector<Node>& nodes) {
@@ -100,10 +111,13 @@ void PointTriangleCollisionConstraint::projectToAuxiliaryVariable(
     float wTriSum = nodeB.invMass + nodeC.invMass + nodeD.invMass;
     float wSum = nodeA.invMass + wTriSum;
 
-    this->projectedPositions[0] += disp * nodeA.invMass / wSum;
-    this->projectedPositions[1] -= disp * wTriSum / wSum;
-    this->projectedPositions[2] -= disp * wTriSum / wSum;
-    this->projectedPositions[3] -= disp * wTriSum / wSum;
+    // TODO: Use relative coords
+
+    this->projectedPositions[0] += disp; 
+    // * nodeA.invMass / wSum;
+    // this->projectedPositions[1] -= disp * wTriSum / wSum;
+    // this->projectedPositions[2] -= disp * wTriSum / wSum;
+    // this->projectedPositions[3] -= disp * wTriSum / wSum;
 
     colliding = true;
   }
@@ -133,6 +147,7 @@ void PointTriangleCollisionConstraint::stabilizeCollisions(
     float wTriSum = nodeB.invMass + nodeC.invMass + nodeD.invMass;
     float wSum = nodeA.invMass + wTriSum;
 
+    // TODO: Use relative coords
     nodeA.position += disp * nodeA.invMass / wSum;
     nodeB.position -= disp * wTriSum / wSum;
     nodeC.position -= disp * wTriSum / wSum;
@@ -148,6 +163,122 @@ void PointTriangleCollisionConstraint::stabilizeCollisions(
 
 void PointTriangleCollisionConstraint::setupCollisionMatrix(
     Eigen::SparseMatrix<float>& systemMatrix) const {
+  for (uint32_t i = 0; i < 4; ++i) {
+    uint32_t nodeId_i = this->nodeIds[i];
+    for (uint32_t j = 0; j < 4; ++j) {
+      uint32_t nodeId_j = this->nodeIds[j];
+      systemMatrix.coeffRef(nodeId_i, nodeId_j) +=
+          this->w * this->AtA.coeff(i, j);
+    }
+  }
+}
+
+void PointTriangleCollisionConstraint::setupGlobalForceVector(
+    Eigen::MatrixXf& forceVector) const {
+  // Set up projected nodes as eigen matrix
+  Eigen::Matrix<float, 4, 3> p;
+  for (uint32_t i = 0; i < 4; ++i) {
+    p.coeffRef(i, 0) = this->projectedPositions[i].x;
+    p.coeffRef(i, 1) = this->projectedPositions[i].y;
+    p.coeffRef(i, 2) = this->projectedPositions[i].z;
+  }
+
+  // Reminder: A == B in this case
+  Eigen::Matrix<float, 4, 3> AtBp = this->AtA * p;
+  for (uint32_t i = 0; i < 4; ++i) {
+    uint32_t nodeId_i = this->nodeIds[i];
+    forceVector.coeffRef(nodeId_i, 0) += this->w * AtBp.coeff(i, 0);
+    forceVector.coeffRef(nodeId_i, 1) += this->w * AtBp.coeff(i, 1);
+    forceVector.coeffRef(nodeId_i, 2) += this->w * AtBp.coeff(i, 2);
+  }
+}
+
+EdgeCollisionConstraint::EdgeCollisionConstraint(
+    const Node& a,
+    const Node& b,
+    const Node& c,
+    const Node& d)
+    : nodeIds{a.id, b.id, c.id, d.id} {}
+
+void EdgeCollisionConstraint::projectToAuxiliaryVariable(
+    const std::vector<Node>& nodes) {
+  const Node& nodeA = nodes[nodeIds[0]];
+  const Node& nodeB = nodes[nodeIds[1]];
+  const Node& nodeC = nodes[nodeIds[2]];
+  const Node& nodeD = nodes[nodeIds[3]];
+
+  this->projectedPositions[0] = nodeA.position;
+  this->projectedPositions[1] = nodeB.position;
+  this->projectedPositions[2] = nodeC.position;
+  this->projectedPositions[3] = nodeD.position;
+
+  glm::vec3 b = nodeB.position - nodeA.position;
+  glm::vec3 c = nodeC.position - nodeA.position;
+  glm::vec3 d = nodeD.position - nodeA.position;
+
+  glm::vec3 n0 = glm::normalize(glm::cross(
+      nodeB.prevPosition - nodeA.prevPosition,
+      nodeD.prevPosition - nodeC.prevPosition));
+
+  float n0DotL1 = glm::max(glm::dot(n0, b), 0.0f);
+  float n0DotL2 = glm::min(glm::dot(n0, c), glm::dot(n0, d));
+
+  float separation = n0DotL2 - n0DotL1;
+  if (separation < thickness) {
+    glm::vec3 disp = (thickness - separation) * n0;
+
+    float w1 = nodeA.invMass + nodeB.invMass;
+    float w2 = nodeC.invMass + nodeD.invMass;
+    float wSum = w1 + w2;
+
+    this->projectedPositions[0] -= disp * w1 / wSum;
+    this->projectedPositions[1] -= disp * w1 / wSum;
+    this->projectedPositions[2] += disp * w2 / wSum;
+    this->projectedPositions[3] += disp * w2 / wSum;
+  }
+}
+
+void EdgeCollisionConstraint::stabilizeCollisions(
+    std::vector<Node>& nodes) {
+  Node& nodeA = nodes[nodeIds[0]];
+  Node& nodeB = nodes[nodeIds[1]];
+  Node& nodeC = nodes[nodeIds[2]];
+  Node& nodeD = nodes[nodeIds[3]];
+
+  glm::vec3 b = nodeB.position - nodeA.position;
+  glm::vec3 c = nodeC.position - nodeA.position;
+  glm::vec3 d = nodeD.position - nodeA.position;
+
+  glm::vec3 n0 = glm::normalize(glm::cross(
+      nodeB.prevPosition - nodeA.prevPosition,
+      nodeD.prevPosition - nodeC.prevPosition));
+
+  float n0DotL1 = glm::max(glm::dot(n0, b), 0.0f);
+  float n0DotL2 = glm::min(glm::dot(n0, c), glm::dot(n0, d));
+
+  float separation = n0DotL2 - n0DotL1;
+  if (separation < thickness) {
+    glm::vec3 disp = (thickness - separation) * n0;
+
+    float w1 = nodeA.invMass + nodeB.invMass;
+    float w2 = nodeC.invMass + nodeD.invMass;
+    float wSum = w1 + w2;
+
+    nodeA.position -= disp * w1 / wSum;
+    nodeB.position -= disp * w1 / wSum;
+    nodeC.position += disp * w2 / wSum;
+    nodeD.position += disp * w2 / wSum;
+
+    // This prevents spuriously adding velocity to the system
+    nodeA.prevPosition -= disp * w1 / wSum;
+    nodeB.prevPosition -= disp * w1 / wSum;
+    nodeC.prevPosition += disp * w2 / wSum;
+    nodeD.prevPosition += disp * w2 / wSum;
+  }
+}
+
+void EdgeCollisionConstraint::setupCollisionMatrix(
+    Eigen::SparseMatrix<float>& systemMatrix) const {
   // if (!colliding) {
   //   return;
   // }
@@ -158,7 +289,7 @@ void PointTriangleCollisionConstraint::setupCollisionMatrix(
   systemMatrix.coeffRef(nodeIds[3], nodeIds[3]) += this->w;
 }
 
-void PointTriangleCollisionConstraint::setupGlobalForceVector(
+void EdgeCollisionConstraint::setupGlobalForceVector(
     Eigen::MatrixXf& forceVector) const {
   // TODO: How do we make this "unilateral" - is that covered in the projection
   // step?

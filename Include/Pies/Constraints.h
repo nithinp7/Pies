@@ -72,7 +72,7 @@ public:
     // Note: We only fill in the lower triangular part of the matrix.
     for (uint32_t i = 0; i < NodeCount; ++i) {
       uint32_t nodeId_i = this->_nodeIds[i];
-      for (uint32_t j = 0; j <= i; ++j) {
+      for (uint32_t j = 0; j < NodeCount; ++j) {
         uint32_t nodeId_j = this->_nodeIds[j];
         systemMatrix.coeffRef(nodeId_i, nodeId_j) +=
             this->_w * this->_AtA.coeff(i, j);

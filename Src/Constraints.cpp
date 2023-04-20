@@ -25,17 +25,25 @@ void DistanceConstraintProjection::operator()(
 
   float wSum = a.invMass + b.invMass;
 
-  projected[0] = a.position - disp * dir * a.invMass / wSum;
-  projected[1] = b.position + disp * dir * b.invMass / wSum;
+  projected[0] = -disp * dir;//a.position - disp * dir * a.invMass / wSum;
+  projected[1] = glm::vec3(0.0f);//b.position + disp * dir * b.invMass / wSum;
 }
 
 DistanceConstraint
 createDistanceConstraint(uint32_t id, const Node& a, const Node& b, float w) {
+  // A == B
+  Eigen::Matrix2f A;
+  //  = Eigen::Matrix2f::Zero();
+  A.coeffRef(0, 0) = 0.5f;
+  A.coeffRef(0, 1) = -0.5f;
+  A.coeffRef(1, 0) = -0.5f;
+  A.coeffRef(1, 1) = 0.5f;
+
   return DistanceConstraint(
       id,
       w,
-      Eigen::Matrix2f::Identity(),
-      Eigen::Matrix2f::Identity(),
+      A,
+      A,
       {glm::length(b.position - a.position)},
       {a.id, b.id});
 }
@@ -122,6 +130,16 @@ TetrahedralConstraint createTetrahedralConstraint(
     const Node& x2,
     const Node& x3,
     const Node& x4) {
+  
+  // A == B
+  Eigen::Matrix4f A = Eigen::Matrix4f::Zero(); 
+  A.coeffRef(1, 0) = -1.0f;
+  A.coeffRef(2, 0) = -1.0f;
+  A.coeffRef(3, 0) = -1.0f;
+
+  A.coeffRef(1, 1) = 1.0f;
+  A.coeffRef(2, 2) = 1.0f;
+  A.coeffRef(3, 3) = 1.0f;
 
   glm::mat3 Q(
       x2.position - x1.position,
@@ -131,8 +149,8 @@ TetrahedralConstraint createTetrahedralConstraint(
   return TetrahedralConstraint(
       id,
       w,
-      Eigen::Matrix4f::Identity(),
-      Eigen::Matrix4f::Identity(),
+      A,
+      A,
       {glm::inverse(Q)},
       {x1.id, x2.id, x3.id, x4.id});
 }
@@ -175,6 +193,16 @@ VolumeConstraint createVolumeConstraint(
     const Node& x2,
     const Node& x3,
     const Node& x4) {
+  // A == B
+  Eigen::Matrix4f A = Eigen::Matrix4f::Zero(); 
+  A.coeffRef(1, 0) = -1.0f;
+  A.coeffRef(2, 0) = -1.0f;
+  A.coeffRef(3, 0) = -1.0f;
+
+  A.coeffRef(1, 1) = 1.0f;
+  A.coeffRef(2, 2) = 1.0f;
+  A.coeffRef(3, 3) = 1.0f;
+
   glm::vec3 x21 = x2.position - x1.position;
   glm::vec3 x31 = x3.position - x1.position;
   glm::vec3 x41 = x4.position - x1.position;
@@ -183,8 +211,8 @@ VolumeConstraint createVolumeConstraint(
   return VolumeConstraint(
       id,
       w,
-      Eigen::Matrix4f::Identity(),
-      Eigen::Matrix4f::Identity(),
+      A,
+      A,
       {targetVolume},
       {x1.id, x2.id, x3.id, x4.id});
 }

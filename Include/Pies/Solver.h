@@ -21,15 +21,15 @@ namespace Pies {
 enum class SolverName { PBD, PD };
 
 struct SolverOptions {
-  uint32_t iterations = 10;
+  uint32_t iterations = 20;
   uint32_t collisionIterations = 0;
-  uint32_t collisionStabilizationIterations = 4;
+  uint32_t collisionStabilizationIterations = 20;//4;
   float collionStiffness = 1.0f;
   uint32_t timeSubsteps = 1;
   float fixedTimestepSize = 0.012f;
   float gravity = 10.0f;
-  float damping = 0.001f;
-  float friction = 0.001f;//1f;
+  float damping = 0.004f;
+  float friction = 0.01f;//1f;
   float staticFrictionThreshold = 0.f;//1.0f;
   float floorHeight = 0.0f;
   float gridSpacing = 2.0f;
@@ -158,6 +158,7 @@ private:
   struct ThreadData {
     std::vector<CollisionConstraint> collisions;
     std::vector<PointTriangleCollisionConstraint> triCollisions;
+    std::vector<EdgeCollisionConstraint> edgeCollisions;
     std::vector<StaticCollisionConstraint> staticCollisions;
   };
 
@@ -165,6 +166,7 @@ private:
 
   std::vector<CollisionConstraint> _collisions;
   std::vector<PointTriangleCollisionConstraint> _triCollisions;
+  std::vector<EdgeCollisionConstraint> _edgeCollisions;
   std::vector<StaticCollisionConstraint> _staticCollisions;
 
   std::thread _clearSpatialHashThread;

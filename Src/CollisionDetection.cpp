@@ -101,7 +101,7 @@ inline void expandTerm(
 namespace Pies {
 namespace CollisionDetection {
 
-std::optional<float> linearCCD(
+std::optional<float> pointTriangleCCD(
     const glm::vec3& ap0,
     const glm::vec3& ab0,
     const glm::vec3& ac0,
@@ -157,7 +157,7 @@ std::optional<float> linearCCD(
     // perpendicular to the triangle normal _at the end of the interval_.
 
     // TODO: Should we consider points _behind_ the triangle??
-    float thickness = 0.4f;
+    float thickness = 0.1f;
     if (nDotP1 >= 0.0f && nDotP1 < thickness) {
       glm::vec3 barycentricCoords = glm::inverse(glm::mat3(ab1, ac1, n1)) * ap1;
 
@@ -172,6 +172,35 @@ std::optional<float> linearCCD(
 
     return std::nullopt;
   }
+}
+
+std::optional<float> edgeEdgeCCD(
+    const glm::vec3& ab0,
+    const glm::vec3& ac0,
+    const glm::vec3& ad0,
+    const glm::vec3& ab1,
+    const glm::vec3& ac1,
+    const glm::vec3& ad1) {
+  // TODO: Conservative test for early exit??
+  // Find the shortest distance between two lines
+  
+  glm::vec3 abd = ab1 - ab0;
+  glm::vec3 acd = ac1 - ac0;
+  glm::vec3 add = ad1 - ad0;
+
+  // Look for a ray-plane intersection throughout the interval
+  CubicExpression expression{};
+  expandTerm(ab0.x, ac0.y, ad0.z, abd.x, acd.y, add.z, expression);
+  expandTerm(-ab0.x, ad0.y, ac0.z, -abd.x, add.y, acd.z, expression);
+  expandTerm(-ac0.x, ab0.y, ad0.z, -acd.x, abd.y, add.z, expression);
+  expandTerm(ac0.x, ad0.y, ab0.z, acd.x, add.y, abd.z, expression);
+  expandTerm(ad0.x, ab0.y, ac0.z, add.x, abd.y, acd.z, expression);
+  expandTerm(-ad0.x, ac0.y, ab0.z, -add.x, acd.y, abd.z, expression);
+
+  return expression.findRootInInterval();
+
+  // TODO: Fallback to static collision detection when the above fails or
+  // there is no intersection but the edges are within some epsilon
 }
 } // namespace CollisionDetection
 } // namespace Pies

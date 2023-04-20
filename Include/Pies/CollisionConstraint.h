@@ -29,11 +29,13 @@ struct CollisionConstraint {
 };
 
 struct PointTriangleCollisionConstraint {
-  float w = 100000.0f;
+  float w = 10000.0f;
   uint32_t nodeIds[4];
   glm::vec3 projectedPositions[4];
   glm::vec3 n;
-  float thickness = 0.1f;
+  // A == B
+  Eigen::Matrix4f AtA;
+  float thickness = 0.01f;
   bool colliding = false;
 
   PointTriangleCollisionConstraint(
@@ -48,25 +50,23 @@ struct PointTriangleCollisionConstraint {
   void setupGlobalForceVector(Eigen::MatrixXf& forceVector) const;
 };
 
-// struct EdgeCollisionConstraint {
-//   float w = 100000.0f;
-//   uint32_t nodeIds[4];
-//   glm::vec3 projectedPositions[4];
-//   glm::vec3 n;
-//   float thickness = 0.1f;
-//   bool colliding = false;
+struct EdgeCollisionConstraint {
+  float w = 100000.0f;
+  uint32_t nodeIds[4];
+  glm::vec3 projectedPositions[4];
+  float thickness = 0.01f;
 
-//   PointTriangleCollisionConstraint(
-//       const Node& a,
-//       const Node& b,
-//       const Node& c,
-//       const Node& d);
+  EdgeCollisionConstraint(
+      const Node& a,
+      const Node& b,
+      const Node& c,
+      const Node& d);
 
-//   void projectToAuxiliaryVariable(const std::vector<Node>& nodes);
-//   void stabilizeCollisions(std::vector<Node>& nodes);
-//   void setupCollisionMatrix(Eigen::SparseMatrix<float>& systemMatrix) const;
-//   void setupGlobalForceVector(Eigen::MatrixXf& forceVector) const;
-// };
+  void projectToAuxiliaryVariable(const std::vector<Node>& nodes);
+  void stabilizeCollisions(std::vector<Node>& nodes);
+  void setupCollisionMatrix(Eigen::SparseMatrix<float>& systemMatrix) const;
+  void setupGlobalForceVector(Eigen::MatrixXf& forceVector) const;
+};
 
 struct StaticCollisionConstraint {
   float w = 10000.0f;
