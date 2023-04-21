@@ -158,9 +158,6 @@ void Solver::tickPBD(float /*timestep*/) {
 void Solver::tickPD(float /*timestep*/) {
   uint32_t nodeCount = static_cast<uint32_t>(this->_nodes.size());
 
-  // TODO: REMOVE THIS LINE
-  this->_volumeConstraints.clear();
-
   float h = this->_options.fixedTimestepSize / this->_options.timeSubsteps;
   float h2 = h * h;
 
