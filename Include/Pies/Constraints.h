@@ -164,6 +164,7 @@ typedef Constraint<1, PositionConstraintProjection> PositionConstraint;
 PositionConstraint createPositionConstraint(uint32_t id, const Node& node, float w);
 
 struct TetrahedralConstraintProjection {
+  glm::mat3 Q;
   glm::mat3 Qinv;
 
   void operator()(
