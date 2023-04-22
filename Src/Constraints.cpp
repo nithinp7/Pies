@@ -1,5 +1,8 @@
 #include "Constraints.h"
 
+#include <Eigen/Core>
+#include <Eigen/Dense>
+#include <Eigen/SVD>
 #include <glm/gtc/matrix_access.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -20,21 +23,30 @@ void DistanceConstraintProjection::operator()(
     dir = diff / dist;
   }
 
-  float disp = this->targetDistance - dist;//glm::min(this->targetDistance - dist, 0.0f);
+  float disp = this->targetDistance -
+               dist; // glm::min(this->targetDistance - dist, 0.0f);
 
   float wSum = a.invMass + b.invMass;
 
-  projected[0] = a.position - disp * dir * a.invMass / wSum;
-  projected[1] = b.position + disp * dir * b.invMass / wSum;
+  projected[0] = -disp * dir;     // a.position - disp * dir * a.invMass / wSum;
+  projected[1] = glm::vec3(0.0f); // b.position + disp * dir * b.invMass / wSum;
 }
 
 DistanceConstraint
 createDistanceConstraint(uint32_t id, const Node& a, const Node& b, float w) {
+  // A == B
+  Eigen::Matrix2f A;
+  //  = Eigen::Matrix2f::Zero();
+  A.coeffRef(0, 0) = 0.5f;
+  A.coeffRef(0, 1) = -0.5f;
+  A.coeffRef(1, 0) = -0.5f;
+  A.coeffRef(1, 1) = 0.5f;
+
   return DistanceConstraint(
       id,
       w,
-      Eigen::Matrix2f::Identity(),
-      Eigen::Matrix2f::Identity(),
+      A,
+      A,
       {glm::length(b.position - a.position)},
       {a.id, b.id});
 }
@@ -73,45 +85,43 @@ void TetrahedralConstraintProjection::operator()(
 
   // Deformation gradient
   glm::mat3 F = P * this->Qinv;
-  glm::mat3 Ft = glm::transpose(F);
 
-  float stretchResistance = 1.0f;
-  glm::mat3 S = Ft * F;
+  Eigen::Matrix3f F_;
+  F_ << F[0][0], F[0][1], F[0][2], F[1][0], F[1][1], F[1][2], F[2][0], F[2][1],
+      F[2][2];
 
-  // Tensor of stretch and strain constraints
-  // Green - St Vernant strain formulation
-  // TODO: Use sqrt version
-  glm::mat3 C = S - glm::mat3(stretchResistance * stretchResistance);
-
-  projected[0] = x1.position;
-  projected[1] = x2.position;
-  projected[2] = x3.position;
-  projected[3] = x4.position;
-
-  // Project the constraints one after another
+  Eigen::JacobiSVD<Eigen::Matrix3f> svdF(
+      F_,
+      Eigen::ComputeFullU | Eigen::ComputeFullV);
+  Eigen::Vector3f singularValues = svdF.singularValues();
+  float omegaMin = 0.8f;
+  float omegaMax = 1.0f;
   for (uint32_t i = 0; i < 3; ++i) {
-    for (uint32_t j = 0; j <= i; ++j) {
-      glm::mat3 dCijdX =
-          glm::outerProduct(glm::column(F, j), glm::column(this->Qinv, i)) +
-          glm::outerProduct(glm::column(F, i), glm::column(this->Qinv, j));
-      glm::vec3 dCijdx1 = -glm::column(dCijdX, 0) - glm::column(dCijdX, 1) -
-                          glm::column(dCijdX, 2);
-      float denom =
-          x1.invMass * glm::dot(dCijdx1, dCijdx1) +
-          x2.invMass *
-              glm::dot(glm::column(dCijdX, 0), glm::column(dCijdX, 0)) +
-          x3.invMass *
-              glm::dot(glm::column(dCijdX, 1), glm::column(dCijdX, 1)) +
-          x4.invMass * glm::dot(glm::column(dCijdX, 2), glm::column(dCijdX, 2));
-      float lambda = C[i][j] / denom;
-
-      // Recompute F from projected positions?
-      projected[0] += -lambda * x1.invMass * dCijdx1;
-      projected[1] += -lambda * x2.invMass * glm::column(dCijdX, 0);
-      projected[2] += -lambda * x3.invMass * glm::column(dCijdX, 1);
-      projected[3] += -lambda * x4.invMass * glm::column(dCijdX, 2);
-    }
+    singularValues[i] = glm::clamp(singularValues[i], omegaMin, omegaMax);
   }
+
+  if (glm::determinant(F) < 0.0f) {
+    singularValues[2] *= -1.0f;
+  }
+
+  // The "fixed" deformation gradient
+  Eigen::Matrix3f Fhat =
+      svdF.matrixU() * singularValues.asDiagonal() * svdF.matrixV().transpose();
+  glm::mat3 P1 = glm::transpose(glm::mat3(
+      Fhat.coeff(0, 0),
+      Fhat.coeff(1, 0),
+      Fhat.coeff(2, 0),
+      Fhat.coeff(0, 1),
+      Fhat.coeff(1, 1),
+      Fhat.coeff(2, 1),
+      Fhat.coeff(0, 2),
+      Fhat.coeff(1, 2),
+      Fhat.coeff(2, 2)));
+
+  projected[0] = glm::vec3(0.0f);
+  projected[1] = P1[0];
+  projected[2] = P1[1];
+  projected[3] = P1[2];
 }
 
 TetrahedralConstraint createTetrahedralConstraint(
@@ -122,17 +132,51 @@ TetrahedralConstraint createTetrahedralConstraint(
     const Node& x3,
     const Node& x4) {
 
-  glm::mat3 Q(
+  // Converts world positions to differential coords
+  Eigen::Matrix<float, 3, 4> worldToDiff = Eigen::Matrix<float, 3, 4>::Zero();
+  worldToDiff.coeffRef(0, 0) = -1.0f;
+  worldToDiff.coeffRef(1, 0) = -1.0f;
+  worldToDiff.coeffRef(2, 0) = -1.0f;
+
+  worldToDiff.coeffRef(0, 1) = 1.0f;
+  worldToDiff.coeffRef(1, 2) = 1.0f;
+  worldToDiff.coeffRef(2, 3) = 1.0f;
+
+  // Converts barycentric coords to world differential cords
+  glm::mat3 baryToDiff(
       x2.position - x1.position,
       x3.position - x1.position,
       x4.position - x1.position);
+  glm::mat3 diffToBary = glm::inverse(baryToDiff);
+
+  Eigen::Matrix3f diffToBary_;
+  diffToBary_ << 
+      diffToBary[0][0], diffToBary[0][1], diffToBary[0][2],
+      diffToBary[1][0], diffToBary[1][1], diffToBary[1][2],
+      diffToBary[2][0], diffToBary[2][1], diffToBary[2][2];
+      
+  Eigen::Matrix<float, 3, 4> A_ = diffToBary_ * worldToDiff;
+  Eigen::Matrix4f A = Eigen::Matrix4f::Zero();
+  // A.coeffRef(1, 0) = -1.0f;
+  // A.coeffRef(2, 0) = -1.0f;
+  // A.coeffRef(3, 0) = -1.0f;
+
+  // A.coeffRef(1, 1) = 1.0f;
+  // A.coeffRef(2, 2) = 1.0f;
+  // A.coeffRef(3, 3) = 1.0f;
+
+
+  A.row(0) << 0.0f, 0.0f, 0.0f, 0.0f;
+  A.row(1) = A_.row(0);
+  A.row(2) = A_.row(1);
+  A.row(3) = A_.row(2);
 
   return TetrahedralConstraint(
       id,
       w,
+      A,
       Eigen::Matrix4f::Identity(),
-      Eigen::Matrix4f::Identity(),
-      {glm::inverse(Q)},
+      {baryToDiff, diffToBary},
       {x1.id, x2.id, x3.id, x4.id});
 }
 
@@ -174,6 +218,16 @@ VolumeConstraint createVolumeConstraint(
     const Node& x2,
     const Node& x3,
     const Node& x4) {
+  // A == B
+  Eigen::Matrix4f A = Eigen::Matrix4f::Zero();
+  A.coeffRef(1, 0) = -1.0f;
+  A.coeffRef(2, 0) = -1.0f;
+  A.coeffRef(3, 0) = -1.0f;
+
+  A.coeffRef(1, 1) = 1.0f;
+  A.coeffRef(2, 2) = 1.0f;
+  A.coeffRef(3, 3) = 1.0f;
+
   glm::vec3 x21 = x2.position - x1.position;
   glm::vec3 x31 = x3.position - x1.position;
   glm::vec3 x41 = x4.position - x1.position;
@@ -182,8 +236,8 @@ VolumeConstraint createVolumeConstraint(
   return VolumeConstraint(
       id,
       w,
-      Eigen::Matrix4f::Identity(),
-      Eigen::Matrix4f::Identity(),
+      A,
+      A,
       {targetVolume},
       {x1.id, x2.id, x3.id, x4.id});
 }
@@ -221,10 +275,8 @@ void BendConstraintProjection::operator()(
   projected[2] = x3.position;
   projected[3] = x4.position;
 
-  glm::vec3 q3 =
-      (glm::cross(p2, n2) + (glm::cross(n1, p2) * d)) / p2Xp3_len;
-  glm::vec3 q4 =
-      (glm::cross(p2, n1) + (glm::cross(n2, p2) * d)) / p2Xp4_len;
+  glm::vec3 q3 = (glm::cross(p2, n2) + (glm::cross(n1, p2) * d)) / p2Xp3_len;
+  glm::vec3 q4 = (glm::cross(p2, n1) + (glm::cross(n2, p2) * d)) / p2Xp4_len;
   glm::vec3 q2 =
       -((glm::cross(p3, n2) + (glm::cross(n1, p3) * d)) / p2Xp3_len) -
       ((glm::cross(p4, n1) + (glm::cross(n2, p4) * d)) / p2Xp4_len);
