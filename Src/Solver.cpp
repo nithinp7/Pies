@@ -823,41 +823,25 @@ void Solver::_parallelPointTriangleCollisions() {
           const Node& nodeD = nodes[pOtherTri->nodeIds[2]];
 
           // Point-triangle collisions
+          for (uint32_t i = 0; i < 3; ++i) {
+            const Node& nodeA = nodes[tri.nodeIds[i]];
 
-          // bool anyVerticesColliding = false;
-          // for (uint32_t i = 0; i < 3; ++i) {
-          //   const Node& nodeA = nodes[tri.nodeIds[i]];
+            std::optional<float> optT = CollisionDetection::pointTriangleCCD(
+                nodeA.prevPosition - nodeB.prevPosition,
+                nodeC.prevPosition - nodeB.prevPosition,
+                nodeD.prevPosition - nodeB.prevPosition,
+                nodeA.position - nodeB.position,
+                nodeC.position - nodeB.position,
+                nodeD.position - nodeB.position);
 
-          //   std::optional<float> optT = CollisionDetection::pointTriangleCCD(
-          //       nodeA.prevPosition - nodeB.prevPosition,
-          //       nodeC.prevPosition - nodeB.prevPosition,
-          //       nodeD.prevPosition - nodeB.prevPosition,
-          //       nodeA.position - nodeB.position,
-          //       nodeC.position - nodeB.position,
-          //       nodeD.position - nodeB.position);
+            if (!optT) {
+              // CCD did not find intersection
+              continue;
+            }
 
-          //   if (optT) {
-          //     // CCD found an intersection
-          //     anyVerticesColliding = true;
-          //     break;
-          //   }
-          // }
+            data.triCollisions.emplace_back(nodeA, nodeB, nodeC, nodeD);
+          }
 
-          // // TODO: Maybe collision constraints should be added between specific
-          // // edge or point-tri pairs??
-          // if (anyVerticesColliding) {
-          //   // Point-Tri collisions
-          //   for (uint32_t i = 0; i < 3; ++i) {
-          //     const Node& a = nodes[tri.nodeIds[i]];
-
-          //     data.triCollisions.emplace_back(
-          //         a,
-          //         nodes[pOtherTri->nodeIds[0]],
-          //         nodes[pOtherTri->nodeIds[1]],
-          //         nodes[pOtherTri->nodeIds[2]]);
-          //   }
-
-            // Edge collisions
           // for (uint32_t i = 0; i < 3; ++i) {
           //   for (uint32_t j = 0; j < 3; ++j) {
           //     const Node& a = nodes[tri.nodeIds[i]];
@@ -882,28 +866,6 @@ void Solver::_parallelPointTriangleCollisions() {
           //     data.edgeCollisions.emplace_back(a, b, c, d);
           //   }
           // }
-          // }
-
-          for (uint32_t i = 0; i < 3; ++i) {
-            const Node& nodeA = nodes[tri.nodeIds[i]];
-
-            std::optional<float> optT = CollisionDetection::pointTriangleCCD(
-                nodeA.prevPosition - nodeB.prevPosition,
-                nodeC.prevPosition - nodeB.prevPosition,
-                nodeD.prevPosition - nodeB.prevPosition,
-                nodeA.position - nodeB.position,
-                nodeC.position - nodeB.position,
-                nodeD.position - nodeB.position);
-
-            if (!optT) {
-              // CCD did not find intersection
-              continue;
-            }
-
-            data.triCollisions.emplace_back(nodeA, nodeB, nodeC, nodeD);
-          }
-
-          // Edge-edge intersectinos
         }
       }
 

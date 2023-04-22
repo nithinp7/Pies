@@ -6,7 +6,6 @@
 
 namespace Pies {
 namespace CollisionDetection {
-
 std::optional<float> pointTriangleCCD(
     const glm::vec3& ap0,
     const glm::vec3& ab0,

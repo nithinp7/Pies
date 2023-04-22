@@ -51,10 +51,14 @@ struct PointTriangleCollisionConstraint {
 };
 
 struct EdgeCollisionConstraint {
-  float w = 100000.0f;
+  float w = 1000000.0f;
   uint32_t nodeIds[4];
   glm::vec3 projectedPositions[4];
-  float thickness = 0.01f;
+  Eigen::Matrix4f AtA;
+
+  float orientation = 1.0f;
+
+  float thickness = 0.1f;
 
   EdgeCollisionConstraint(
       const Node& a,
