@@ -21,7 +21,7 @@ namespace Pies {
 enum class SolverName { PBD, PD };
 
 struct SolverOptions {
-  uint32_t iterations = 50;
+  uint32_t iterations = 4;
   uint32_t collisionIterations = 0;
   uint32_t collisionStabilizationIterations = 5;
   float collionStiffness = 1.0f;

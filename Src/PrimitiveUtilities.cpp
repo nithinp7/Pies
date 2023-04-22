@@ -125,6 +125,15 @@ void Solver::addTriMeshVolume(
   // tetgenOutput.tetrahedronlist()
   size_t existingNodesCount = this->_nodes.size();
   size_t existingTetsCount = this->_tetConstraints.size();
+  size_t existingTrisCount = this->_triangles.size();
+
+  this->_triangles.reserve(existingTrisCount + indices.size() / 3);
+  for (size_t i = 0; i < indices.size(); i += 3) {
+    Triangle& tri = this->_triangles.emplace_back();
+    tri.nodeIds[0] = static_cast<uint32_t>(existingNodesCount) + indices[i];
+    tri.nodeIds[1] = static_cast<uint32_t>(existingNodesCount) + indices[i+1];
+    tri.nodeIds[2] = static_cast<uint32_t>(existingNodesCount) + indices[i+2];
+  }
 
   this->_nodes.reserve(existingNodesCount + tetgenOutput.numberofpoints);
   for (int i = 0; i < tetgenOutput.numberofpoints; i++) {
@@ -209,7 +218,8 @@ void Solver::createTetBox(
 
         // if (hinged && i == 0) { //} && j == 0) {
         //   this->_positionConstraints.push_back(
-        //       createPositionConstraint(this->_constraintId++, node, stiffness));
+        //       createPositionConstraint(this->_constraintId++, node,
+        //       stiffness));
         // }
       }
     }
@@ -855,7 +865,7 @@ void Solver::createShapeMatchingBox(
         node.prevPosition = node.position;
         node.velocity = glm::vec3(0.0f);
         node.radius = 0.5f * scale;
-        node.invMass = 1.0f /10.0f;
+        node.invMass = 1.0f / 10.0f;
 
         // if (i == 0 && j == 0) {
         //   this->_positionConstraints.push_back(
@@ -864,7 +874,7 @@ void Solver::createShapeMatchingBox(
       }
     }
   }
-  
+
   std::vector<uint32_t> nodeIndices(grid.width * grid.height * grid.depth);
   std::vector<glm::vec3> materialCoords(nodeIndices.size());
   for (uint32_t i = 0; i < nodeIndices.size(); ++i) {
@@ -886,7 +896,6 @@ void Solver::createShapeMatchingBox(
 
   this->renderStateDirty = true;
 }
-
 
 void Solver::createShapeMatchingSheet(
     const glm::vec3& translation,
@@ -966,7 +975,6 @@ void Solver::createShapeMatchingSheet(
 
   this->renderStateDirty = true;
 }
-
 
 void Solver::createBendSheet(
     const glm::vec3& translation,
