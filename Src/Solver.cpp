@@ -222,47 +222,14 @@ void Solver::tickPD(float /*timestep*/) {
       Node& node = this->_nodes[i];
       // Construct momentum estimate for qn+1
       node.position += h * node.velocity;
-    }
 
-    this->_parallelPointTriangleCollisions();
-#if 1
-    for (uint32_t collisionIter = 0;
-         collisionIter < this->_options.collisionIterations;
-         ++collisionIter) {
-      // this->_parallelComputeCollisions();
-      // this->_parallelPointTriangleCollisions();
-      for (CollisionConstraint& collision : this->_collisions) {
-        collision.projectToAuxiliaryVariable(this->_nodes);
-        Node& nodeA = this->_nodes[collision.nodeIds[0]];
-        Node& nodeB = this->_nodes[collision.nodeIds[1]];
-        nodeA.position += this->_options.collionStiffness *
-                          (collision.projectedPositions[0] - nodeA.position);
-        nodeB.position += this->_options.collionStiffness *
-                          (collision.projectedPositions[1] - nodeB.position);
-      }
-
-      for (PointTriangleCollisionConstraint& collision : this->_triCollisions) {
-        collision.stabilizeCollisions(this->_nodes);
-      }
-
-      for (EdgeCollisionConstraint& collision : this->_edgeCollisions) {
-        collision.stabilizeCollisions(this->_nodes);
-      }
-
-      for (StaticCollisionConstraint& collision : this->_staticCollisions) {
-        // TODO: stiffness
-        this->_nodes[collision.nodeId].position = collision.projectedPosition;
-      }
-    }
-#endif
-
-    for (uint32_t i = 0; i < nodeCount; ++i) {
-      const Node& node = this->_nodes[i];
       glm::vec3 Msn_h2 = node.position / node.invMass / h2;
       this->_Msn_h2.coeffRef(i, 0) = Msn_h2.x;
       this->_Msn_h2.coeffRef(i, 1) = Msn_h2.y;
       this->_Msn_h2.coeffRef(i, 2) = Msn_h2.z;
     }
+
+    this->_parallelPointTriangleCollisions();
 
     this->_collisionMatrix.setZero();
     this->_stiffnessAndCollisionMatrix.setZero();
@@ -762,6 +729,8 @@ void Solver::_parallelPointTriangleCollisions() {
                               threadCount = this->_options.threadCount,
                               &spatialHash = this->_spatialHashTris,
                               &threadData = this->_threadData,
+                              threshold = this->_options.collisionThresholdDistance,
+                              thickness = this->_options.collisionThickness,
                               floorHeight =
                                   this->_options.floorHeight](size_t threadId) {
     ThreadData& data = threadData[threadId];
@@ -832,14 +801,15 @@ void Solver::_parallelPointTriangleCollisions() {
                 nodeD.prevPosition - nodeB.prevPosition,
                 nodeA.position - nodeB.position,
                 nodeC.position - nodeB.position,
-                nodeD.position - nodeB.position);
+                nodeD.position - nodeB.position,
+                threshold);
 
             if (!optT) {
               // CCD did not find intersection
               continue;
             }
 
-            data.triCollisions.emplace_back(nodeA, nodeB, nodeC, nodeD);
+            data.triCollisions.emplace_back(nodeA, nodeB, nodeC, nodeD, thickness);
           }
 
           // for (uint32_t i = 0; i < 3; ++i) {

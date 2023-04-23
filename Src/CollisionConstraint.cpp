@@ -68,8 +68,9 @@ PointTriangleCollisionConstraint::PointTriangleCollisionConstraint(
     const Node& a,
     const Node& b,
     const Node& c,
-    const Node& d)
-    : nodeIds{a.id, b.id, c.id, d.id}, n(0.0f) {
+    const Node& d,
+    float thickness_)
+    : nodeIds{a.id, b.id, c.id, d.id}, n(0.0f), thickness(thickness_) {
   Eigen::Matrix4f A = Eigen::Matrix4f::Zero();
   A.coeffRef(1, 0) = -1.0f;
   A.coeffRef(2, 0) = -1.0f;

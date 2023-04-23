@@ -42,7 +42,8 @@ struct PointTriangleCollisionConstraint {
       const Node& a,
       const Node& b,
       const Node& c,
-      const Node& d);
+      const Node& d,
+      float thickness_);
 
   void projectToAuxiliaryVariable(const std::vector<Node>& nodes);
   void stabilizeCollisions(std::vector<Node>& nodes);

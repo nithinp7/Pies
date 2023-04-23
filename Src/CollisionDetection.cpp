@@ -107,7 +107,8 @@ std::optional<float> pointTriangleCCD(
     const glm::vec3& ac0,
     const glm::vec3& ap1,
     const glm::vec3& ab1,
-    const glm::vec3& ac1) {
+    const glm::vec3& ac1,
+    float thresholdDistance) {
 
   // Early check to see if the point ever crosses the triangle plane
   // Assumes normal doesn't rotate significantly over the short interval.
@@ -121,8 +122,7 @@ std::optional<float> pointTriangleCCD(
     // to be colliding if it is within the thickness.
 
     // TODO: Should we consider points _behind_ the triangle??
-    float thickness = 0.1f;
-    if (nDotP1 >= 0.0f && nDotP1 < thickness) {
+    if (nDotP1 >= 0.0f && nDotP1 < thresholdDistance) {
       glm::vec3 barycentricCoords = glm::inverse(glm::mat3(ab1, ac1, n1)) * ap1;
 
       if ((0.0 > barycentricCoords.x) || (barycentricCoords.x > 1.0) ||
