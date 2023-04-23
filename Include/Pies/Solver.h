@@ -5,6 +5,8 @@
 #include "Node.h"
 #include "SpatialHash.h"
 #include "Tetrahedron.h"
+#include "Triangle.h"
+#include "ShapeMatchingConstraint.h"
 
 #include <Eigen/Core>
 #include <Eigen/SparseCholesky>
@@ -13,21 +15,25 @@
 #include <cstdint>
 #include <memory>
 #include <vector>
+#include <thread>
 
 namespace Pies {
 enum class SolverName { PBD, PD };
 
 struct SolverOptions {
   uint32_t iterations = 4;
-  uint32_t timeSubsteps = 3;
+  uint32_t collisionIterations = 0;
+  uint32_t collisionStabilizationIterations = 4;
+  float collionStiffness = 1.0f;
+  uint32_t timeSubsteps = 1;
   float fixedTimestepSize = 0.012f;
   float gravity = 10.0f;
-  float damping = 0.0005f;
-  float friction = 0.01f;
-  float staticFrictionThreshold = 0.0f;
+  float damping = 0.006f;
+  float friction = 0.01f;//1f;
+  float staticFrictionThreshold = 0.f;//1.0f;
   float floorHeight = 0.0f;
-  float gridSpacing = 1.0f;
-  uint32_t threadCount = 12;
+  float gridSpacing = 2.0f;
+  uint32_t threadCount = 8;
   SolverName solver = SolverName::PD;
 };
 
@@ -47,6 +53,10 @@ public:
 
   Solver() = default;
   Solver(const SolverOptions& options);
+  Solver(Solver&& rhs) = default;
+  Solver& operator=(Solver&& rhs) = default;
+
+  ~Solver();
 
   void tick(float deltaTime);
   void tickPBD(float deltaTime);
@@ -56,11 +66,18 @@ public:
 
   const std::vector<uint32_t>& getLines() const { return this->_lines; }
 
-  const std::vector<uint32_t>& getTriangles() const { return this->_triangles; }
+  const std::vector<Triangle>& getTriangles() const { return this->_triangles; }
 
   const SolverOptions& getOptions() const { return this->_options; }
 
   void clear();
+
+  // Utilities for importing meshes
+  void addNodes(const std::vector<glm::vec3>& vertices);
+  void addTriMeshVolume(
+      const std::vector<glm::vec3>& vertices,
+      const std::vector<uint32_t>& triIndices,
+      float w);
 
   // Utilities for spawning primitives
   void createBox(const glm::vec3& translation, float scale, float w);
@@ -71,12 +88,27 @@ public:
       float w,
       float mass,
       bool hinged);
-  void createSheet(const glm::vec3& translation, float scale, float mass, float w);
+  void
+  createSheet(const glm::vec3& translation, float scale, float mass, float k);
+  void createShapeMatchingBox(
+      const glm::vec3& translation,
+      uint32_t countX,
+      uint32_t countY,
+      uint32_t countZ,
+      float scale,
+      const glm::vec3& initialVelocity,
+      float w);
+  void createShapeMatchingSheet(
+      const glm::vec3& translation,
+      float scale,
+      const glm::vec3& initialVelocity,
+      float w);
   void createBendSheet(const glm::vec3& translation, float scale, float w);
 
 private:
   void _computeCollisions();
   void _parallelComputeCollisions();
+  void _parallelPointTriangleCollisions();
 
   struct NodeCompRange {
     SpatialHashGridCellRange
@@ -90,10 +122,18 @@ private:
     operator()(const Tetrahedron& node, const SpatialHashGrid& grid) const;
   };
 
+  struct TriCompRange {
+    const std::vector<Node>& nodes;
+
+    SpatialHashGridCellRange
+    operator()(const Triangle& triangle, const SpatialHashGrid& grid) const;
+  };
+
   SolverOptions _options;
   uint32_t _constraintId = 0;
 
   SpatialHash<Node, NodeCompRange> _spatialHashNodes;
+  SpatialHash<Triangle, TriCompRange> _spatialHashTris;
   SpatialHash<Tetrahedron, TetCompRange> _spatialHashTets;
 
   std::vector<Node> _nodes;
@@ -101,6 +141,8 @@ private:
   std::vector<PositionConstraint> _positionConstraints;
   std::vector<DistanceConstraint> _distanceConstraints;
   std::vector<TetrahedralConstraint> _tetConstraints;
+  std::vector<VolumeConstraint> _volumeConstraints;
+  std::vector<ShapeMatchingConstraint> _shapeConstraints;
   std::vector<BendConstraint> _bendConstraints;
 
   uint32_t _previousNodeCount = 0;
@@ -115,16 +157,22 @@ private:
 
   struct ThreadData {
     std::vector<CollisionConstraint> collisions;
+    std::vector<PointTriangleCollisionConstraint> triCollisions;
+    std::vector<EdgeCollisionConstraint> edgeCollisions;
     std::vector<StaticCollisionConstraint> staticCollisions;
   };
 
   std::vector<ThreadData> _threadData;
 
   std::vector<CollisionConstraint> _collisions;
+  std::vector<PointTriangleCollisionConstraint> _triCollisions;
+  std::vector<EdgeCollisionConstraint> _edgeCollisions;
   std::vector<StaticCollisionConstraint> _staticCollisions;
 
+  std::thread _clearSpatialHashThread;
+
   // TODO: Seperate into individual buffers for each object??
-  std::vector<uint32_t> _triangles;
+  std::vector<Triangle> _triangles;
   std::vector<uint32_t> _lines;
   std::vector<Vertex> _vertices;
 };
