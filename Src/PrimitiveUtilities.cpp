@@ -91,21 +91,25 @@ void Solver::addTriMeshVolume(
   tetgenio tetgenInput{};
   tetgenInput.numberofpoints = static_cast<int>(vertices.size());
   tetgenInput.pointlist = new double[vertices.size() * 3];
+  tetgenInput.pointmarkerlist = new int[vertices.size()];
   for (size_t i = 0; i < vertices.size(); ++i) {
     const glm::vec3& vertex = vertices[i];
     tetgenInput.pointlist[3 * i + 0] = vertex.x;
     tetgenInput.pointlist[3 * i + 1] = vertex.y;
     tetgenInput.pointlist[3 * i + 2] = vertex.z;
+
+    tetgenInput.pointmarkerlist[i] = 1;
   }
 
-  // TODO: Is there any advantage to _not_ treating each triangle as its own
-  // face??
   tetgenInput.numberoffacets = static_cast<int>(indices.size() / 3);
+  tetgenInput.facetmarkerlist = new int[indices.size() / 3];
   tetgenInput.facetlist = new tetgenio::facet[tetgenInput.numberoffacets];
   for (int i = 0; i < tetgenInput.numberoffacets; ++i) {
     tetgenio::facet& face = tetgenInput.facetlist[i];
     face.numberofpolygons = 1;
     face.polygonlist = new tetgenio::polygon[1];
+
+    tetgenInput.facetmarkerlist[i] = 1;
 
     face.polygonlist[0].numberofvertices = 3;
     face.polygonlist[0].vertexlist = new int[3];
@@ -117,28 +121,67 @@ void Solver::addTriMeshVolume(
     face.holelist = nullptr;
   }
 
+  tetgenio tetgenInterm{};
   tetgenio tetgenOutput{};
   tetgenbehavior behavior{};
+  behavior.plc = 1;
+  behavior.facesout = 1;
+  behavior.neighout = 2;
+  behavior.zeroindex = 1;
 
+  // tetgenbehavior behavior{};
+  // // behavior.addinfilename = "pq1.414a0.1aA";
+  // behavior.cdt = 1;
+  // behavior.plc = 1;
+  // behavior.refine = 1;
+  // behavior.quality = 1;
+  // behavior.minratio = 1.1;
+  // //414;
+
+  // behavior.varvolume = 1;
+  // behavior.maxvolume = 0.1; 
+  // //behavior.nomergefacet = 1;
+  // behavior.facesout = 1;
+  // behavior.zeroindex = 1;
+  // //behavior.regionattrib = 1;
+  // //behavior.plc = 1;
+  // //behavior.nofacewritten = 1;
+  
   tetrahedralize(&behavior, &tetgenInput, &tetgenOutput);
 
-  // tetgenOutput.tetrahedronlist()
   size_t existingNodesCount = this->_nodes.size();
   size_t existingTetsCount = this->_tetConstraints.size();
+  size_t existingVolumesCount = this->_volumeConstraints.size();
   size_t existingTrisCount = this->_triangles.size();
 
-  this->_triangles.reserve(existingTrisCount + indices.size() / 3);
-  for (size_t i = 0; i < indices.size(); i += 3) {
+  this->_triangles.reserve(existingTrisCount + tetgenOutput.numberoftrifaces);
+  for (size_t i = 0; i < tetgenOutput.numberoftrifaces; ++i) {
+    int v0 = tetgenOutput.trifacelist[3 * i];
+    int v1 = tetgenOutput.trifacelist[3 * i + 1];
+    int v2 = tetgenOutput.trifacelist[3 * i + 2];
+
+    int t0 = tetgenOutput.face2tetlist[2 * i];
+    int t1 = tetgenOutput.face2tetlist[2 * i + 1];
+
+    if (t0 >= 0 && t1 >= 0) {
+      continue;
+    }
+
     Triangle& tri = this->_triangles.emplace_back();
-    tri.nodeIds[0] = static_cast<uint32_t>(existingNodesCount) + indices[i];
-    tri.nodeIds[1] = static_cast<uint32_t>(existingNodesCount) + indices[i+1];
-    tri.nodeIds[2] = static_cast<uint32_t>(existingNodesCount) + indices[i+2];
+
+    // Switch winding so normals point outward
+    tri.nodeIds[0] = static_cast<uint32_t>(
+        existingNodesCount + v0);
+    tri.nodeIds[1] = static_cast<uint32_t>(
+        existingNodesCount + v2);
+    tri.nodeIds[2] = static_cast<uint32_t>(
+        existingNodesCount + v1); 
   }
 
   this->_nodes.reserve(existingNodesCount + tetgenOutput.numberofpoints);
   for (int i = 0; i < tetgenOutput.numberofpoints; i++) {
     Node& node = this->_nodes.emplace_back();
-    node.id = existingNodesCount + i;
+    node.id = static_cast<uint32_t>(this->_nodes.size() - 1);
     node.position = glm::vec3(
         static_cast<float>(tetgenOutput.pointlist[3 * i + 0]),
         static_cast<float>(tetgenOutput.pointlist[3 * i + 1]),
@@ -151,6 +194,8 @@ void Solver::addTriMeshVolume(
 
   this->_tetConstraints.reserve(
       existingTetsCount + tetgenOutput.numberoftetrahedra);
+  this->_volumeConstraints.reserve(
+      existingVolumesCount + tetgenOutput.numberoftetrahedra);
   for (int i = 0; i < tetgenOutput.numberoftetrahedra; ++i) {
     int v1 = tetgenOutput.tetrahedronlist[4 * i + 0];
     int v2 = tetgenOutput.tetrahedronlist[4 * i + 1];
@@ -158,6 +203,14 @@ void Solver::addTriMeshVolume(
     int v4 = tetgenOutput.tetrahedronlist[4 * i + 3];
 
     this->_tetConstraints.push_back(createTetrahedralConstraint(
+        this->_constraintId++,
+        w,
+        this->_nodes[existingNodesCount + v1],
+        this->_nodes[existingNodesCount + v2],
+        this->_nodes[existingNodesCount + v3],
+        this->_nodes[existingNodesCount + v4]));
+
+    this->_volumeConstraints.push_back(createVolumeConstraint(
         this->_constraintId++,
         w,
         this->_nodes[existingNodesCount + v1],
@@ -702,7 +755,7 @@ void Solver::createSheet(
     float scale,
     float mass,
     float w) {
-  Grid grid{16, 16, 1};
+  Grid grid{10, 10, 1};
 
   size_t currentNodeCount = this->_nodes.size();
   size_t currentDistConstraintsCount = this->_distanceConstraints.size();
