@@ -4,12 +4,21 @@
 #include <tetgen.h>
 
 #include <cstdlib>
+#include <unordered_map>
 
-namespace Pies {
 namespace {
 float randf() { return static_cast<float>(double(std::rand()) / RAND_MAX); }
 
 glm::vec3 randColor() { return glm::vec3(randf(), randf(), randf()); }
+
+struct Edge {
+  uint32_t vertexId1;
+  uint32_t vertexId2; // where vertexId1 < vertexId2
+
+  bool operator==(const Edge& other) const {
+    return vertexId1 == other.vertexId1 && vertexId2 == other.vertexId2;
+  }
+};
 
 struct GridId {
   uint32_t x;
@@ -38,6 +47,104 @@ struct Grid {
   }
 };
 } // namespace
+
+namespace std {
+  template <> struct hash<Edge> { 
+    std::size_t operator()(const Edge& k) const {
+
+      std::hash<uint32_t> h;
+      // Compute individual hash values for first,
+      // second and third and combine them using XOR
+      // and bit shifting:
+
+      return (h(k.vertexId1) << 1) ^ h(k.vertexId2);     
+    }
+  };
+}
+
+
+namespace Pies {
+
+void Solver::addClothMesh(
+    const std::vector<glm::vec3>& vertices,
+    const std::vector<uint32_t>& indices,
+    float w) {
+
+  float mass = 1.0f;
+  float radius = 0.5f;
+  glm::vec3 initialVelocity(0.0f);
+
+  glm::vec3 color = randColor();
+  float roughness = randf();
+  float metallic = static_cast<float>(std::rand() % 2);
+
+  size_t currentNodeCount = this->_nodes.size();
+  this->_nodes.reserve(currentNodeCount + vertices.size());
+  for (uint32_t i = 0; i < static_cast<uint32_t>(vertices.size()); ++i) {
+    Node& node = this->_nodes.emplace_back();
+    node.id = currentNodeCount + i;
+    node.position = vertices[i];
+    node.prevPosition = node.position;
+    node.velocity = initialVelocity;
+    node.radius = radius;
+    node.invMass = 1.0f / mass;
+  }
+
+  this->_vertices.resize(this->_nodes.size());
+  for (size_t i = currentNodeCount; i < this->_nodes.size(); ++i) {
+    this->_vertices[i].position = this->_nodes[i].position;
+    this->_vertices[i].radius = this->_nodes[i].radius;
+    this->_vertices[i].baseColor = color;
+    this->_vertices[i].roughness = roughness;
+    this->_vertices[i].metallic = metallic;
+  }
+
+  struct Adjacency {
+    uint32_t triId; // where 3 * triId is the offset to triangle indicies
+    std::optional<uint32_t> triId2;
+  };
+
+  std::unordered_map<Edge, Adjacency> adjacencyMap;
+
+  for (uint32_t i = 0; i < indices.size() - 1; ++i) {
+    Edge e{};
+    e.vertexId1 = indices[i];
+    e.vertexId2 = indices[i + 1];
+
+    if (e.vertexId1 > e.vertexId2) {
+      std::swap(e.vertexId1, e.vertexId2);
+    }
+    
+    auto eIt = adjacencyMap.find(e);
+    if (eIt == adjacencyMap.end()) {
+      adjacencyMap.emplace(e, Adjacency{i/3, std::nullopt});
+    } else {
+      eIt->second.triId2 = i/3;
+    }
+  }
+    
+  //for each over adjacencyMap , for auto adjIt in adjMap
+
+  for (auto adjIt : adjacencyMap) {
+    uint32_t vId1 = adjIt.first.vertexId1;
+    uint32_t vId2 = adjIt.first.vertexId2;
+    
+    this->_distanceConstraints.push_back(createDistanceConstraint(
+        this->_constraintId++,
+        this->_nodes[currentNodeCount + vId1],
+        this->_nodes[currentNodeCount + vId2],
+		w));
+
+  }
+    
+  //add triangles
+ 
+  //list of pairs, <nodeid, nodeid>
+
+  this->renderStateDirty = true;
+
+  return;
+}
 
 void Solver::addNodes(const std::vector<glm::vec3>& vertices) {
 
