@@ -122,6 +122,15 @@ void Solver::addClothMesh(
       eIt->second.triId2 = i/3;
     }
   }
+
+  for (uint32_t i = 0; i < indices.size(); i += 3) {
+    Triangle t;
+    t.nodeIds[0] = indices[i] + currentNodeCount;
+    t.nodeIds[1] = indices[i + 1] + currentNodeCount;
+    t.nodeIds[2] = indices[i + 2] + currentNodeCount;
+
+    this->_triangles.push_back(t);
+  }
     
   //for each over adjacencyMap , for auto adjIt in adjMap
 
@@ -129,11 +138,28 @@ void Solver::addClothMesh(
     uint32_t vId1 = adjIt.first.vertexId1;
     uint32_t vId2 = adjIt.first.vertexId2;
     
+    //TODO: bend consraint conditional
+    if (adjIt.second.triId2) {
+      continue;
+    }
+    
     this->_distanceConstraints.push_back(createDistanceConstraint(
         this->_constraintId++,
         this->_nodes[currentNodeCount + vId1],
         this->_nodes[currentNodeCount + vId2],
 		w));
+    
+    //TODO: bend constraint
+    /*
+    this->_bendConstraints.push_back(createBendConstraint(
+        this->_constraintId++,
+        w,
+        this->_nodes[],
+        this->_nodes[],
+        this->_nodes[],
+        this->_nodes[]
+    ));
+    */
 
   }
     
