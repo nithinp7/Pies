@@ -107,7 +107,11 @@ void Solver::addFixedRegions(
 void Solver::addTriMeshVolume(
     const std::vector<glm::vec3>& vertices,
     const std::vector<uint32_t>& indices,
-    float w) {
+    float strainStiffness,
+    float minStrain,
+    float maxStrain,
+    float volumeStiffness,
+    float volumeMultiplier) {
 
   // TODO: parameterize more of these
   float mass = 1.0f;
@@ -230,19 +234,22 @@ void Solver::addTriMeshVolume(
 
     this->_tetConstraints.push_back(createTetrahedralConstraint(
         this->_constraintId++,
-        w,
+        strainStiffness,
         this->_nodes[existingNodesCount + v1],
         this->_nodes[existingNodesCount + v2],
         this->_nodes[existingNodesCount + v3],
-        this->_nodes[existingNodesCount + v4]));
+        this->_nodes[existingNodesCount + v4],
+        minStrain,
+        maxStrain));
 
     this->_volumeConstraints.push_back(createVolumeConstraint(
         this->_constraintId++,
-        w,
+        volumeStiffness,
         this->_nodes[existingNodesCount + v1],
         this->_nodes[existingNodesCount + v2],
         this->_nodes[existingNodesCount + v3],
-        this->_nodes[existingNodesCount + v4]));
+        this->_nodes[existingNodesCount + v4],
+        volumeMultiplier));
   }
 
   this->_vertices.resize(this->_nodes.size());

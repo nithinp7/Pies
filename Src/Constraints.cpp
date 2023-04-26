@@ -31,8 +31,9 @@ void DistanceConstraintProjection::operator()(
 
   float wSum = a.invMass + b.invMass;
 
-  projected[0] += -disp * dir;     // a.position - disp * dir * a.invMass / wSum;
-  // projected[1] += glm::vec3(0.0f); // b.position + disp * dir * b.invMass / wSum;
+  projected[0] += -disp * dir; // a.position - disp * dir * a.invMass / wSum;
+  // projected[1] += glm::vec3(0.0f); // b.position + disp * dir * b.invMass /
+  // wSum;
 }
 
 DistanceConstraint
@@ -133,7 +134,9 @@ TetrahedralConstraint createTetrahedralConstraint(
     const Node& x1,
     const Node& x2,
     const Node& x3,
-    const Node& x4) {
+    const Node& x4,
+    float minStrain,
+    float maxStrain) {
 
   // Converts world positions to differential coords
   Eigen::Matrix<float, 3, 4> worldToDiff = Eigen::Matrix<float, 3, 4>::Zero();
@@ -153,11 +156,10 @@ TetrahedralConstraint createTetrahedralConstraint(
   glm::mat3 diffToBary = glm::inverse(baryToDiff);
 
   Eigen::Matrix3f diffToBary_;
-  diffToBary_ << 
-      diffToBary[0][0], diffToBary[0][1], diffToBary[0][2],
-      diffToBary[1][0], diffToBary[1][1], diffToBary[1][2],
-      diffToBary[2][0], diffToBary[2][1], diffToBary[2][2];
-      
+  diffToBary_ << diffToBary[0][0], diffToBary[0][1], diffToBary[0][2],
+      diffToBary[1][0], diffToBary[1][1], diffToBary[1][2], diffToBary[2][0],
+      diffToBary[2][1], diffToBary[2][2];
+
   Eigen::Matrix<float, 3, 4> A_ = diffToBary_ * worldToDiff;
   Eigen::Matrix4f A = Eigen::Matrix4f::Zero();
   // A.coeffRef(1, 0) = -1.0f;
@@ -167,7 +169,6 @@ TetrahedralConstraint createTetrahedralConstraint(
   // A.coeffRef(1, 1) = 1.0f;
   // A.coeffRef(2, 2) = 1.0f;
   // A.coeffRef(3, 3) = 1.0f;
-
 
   A.row(0) << 0.0f, 0.0f, 0.0f, 0.0f;
   A.row(1) = A_.row(0);
@@ -179,7 +180,7 @@ TetrahedralConstraint createTetrahedralConstraint(
       w,
       A,
       Eigen::Matrix4f::Identity(),
-      {baryToDiff, diffToBary},
+      {baryToDiff, diffToBary, minStrain, maxStrain},
       {x1.id, x2.id, x3.id, x4.id});
 }
 
@@ -220,7 +221,8 @@ VolumeConstraint createVolumeConstraint(
     const Node& x1,
     const Node& x2,
     const Node& x3,
-    const Node& x4) {
+    const Node& x4,
+    float volumeMultiplier) {
   // A == B
   Eigen::Matrix4f A = Eigen::Matrix4f::Zero();
   A.coeffRef(1, 0) = -1.0f;
@@ -235,7 +237,8 @@ VolumeConstraint createVolumeConstraint(
   glm::vec3 x31 = x3.position - x1.position;
   glm::vec3 x41 = x4.position - x1.position;
 
-  float targetVolume = glm::dot(glm::cross(x21, x31), x41) / 6.0f;
+  float targetVolume =
+      volumeMultiplier * glm::dot(glm::cross(x21, x31), x41) / 6.0f;
   return VolumeConstraint(
       id,
       w,
