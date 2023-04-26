@@ -138,11 +138,6 @@ void Solver::addClothMesh(
     uint32_t vId1 = adjIt.first.vertexId1;
     uint32_t vId2 = adjIt.first.vertexId2;
     
-    //TODO: bend consraint conditional
-    if (adjIt.second.triId2) {
-      continue;
-    }
-    
     this->_distanceConstraints.push_back(createDistanceConstraint(
         this->_constraintId++,
         this->_nodes[currentNodeCount + vId1],
@@ -150,16 +145,24 @@ void Solver::addClothMesh(
 		w));
     
     //TODO: bend constraint
-    /*
-    this->_bendConstraints.push_back(createBendConstraint(
-        this->_constraintId++,
-        w,
-        this->_nodes[],
-        this->_nodes[],
-        this->_nodes[],
-        this->_nodes[]
-    ));
-    */
+    if (adjIt.second.triId2.has_value()) {
+      
+      
+      uint32_t triId1 = adjIt.second.triId;
+      uint32_t triId2 = adjIt.second.triId2.value();
+      
+      if (triId1 == vId1 || triId1 == vId2) {
+        continue;
+      }
+
+      this->_bendConstraints.push_back(createBendConstraint(
+          this->_constraintId++,
+          w,
+          this->_nodes[triId1],
+          this->_nodes[vId1],
+          this->_nodes[vId2],
+          this->_nodes[triId2]));
+    }
 
   }
     
