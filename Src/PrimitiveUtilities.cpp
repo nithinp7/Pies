@@ -124,12 +124,10 @@ void Solver::addClothMesh(
   }
 
   for (uint32_t i = 0; i < indices.size(); i += 3) {
-    Triangle t;
+    Triangle& t = this->_triangles.emplace_back();
     t.nodeIds[0] = indices[i] + currentNodeCount;
     t.nodeIds[1] = indices[i + 1] + currentNodeCount;
     t.nodeIds[2] = indices[i + 2] + currentNodeCount;
-
-    this->_triangles.push_back(t);
   }
     
   //for each over adjacencyMap , for auto adjIt in adjMap
@@ -147,23 +145,46 @@ void Solver::addClothMesh(
     //TODO: bend constraint
     if (adjIt.second.triId2.has_value()) {
       
-      
-      uint32_t triId1 = adjIt.second.triId;
-      uint32_t triId2 = adjIt.second.triId2.value();
-      
-      if (triId1 == vId1 || triId1 == vId2) {
-        continue;
+      uint32_t triId1 = adjIt.second.triId * 3;
+      uint32_t triId2 = adjIt.second.triId2.value() * 3;
+
+      uint32_t triVert1 = 0;
+      uint32_t triVert2 = 0;
+        
+      //TODO: CHECK TRI VERTS FOR REPEAT
+      if (indices[triId1] != vId1 && indices[triId1] != vId2) {
+        triVert1 = indices[triId1];
       }
+      else if (indices[triId1 + 1] != vId1 && indices[triId1 + 1] != vId2) {
+        triVert1 = indices[triId1 + 1];
+      }
+      else {
+        triVert1 = indices[triId1 + 2];
+      }
+
+      if (indices[triId2] != vId1 && indices[triId2] != vId2) {
+        triVert2 = indices[triId2];
+      }
+      else if (indices[triId2 + 1] != vId1 && indices[triId2 + 1] != vId2) {
+        triVert2 = indices[triId2 + 1];
+      }
+      else {
+        triVert2 = indices[triId2 + 2];
+      }
+
+      uint32_t n0 = currentNodeCount + vId1;
+      uint32_t n1 = currentNodeCount + vId2;
+      uint32_t n2 = currentNodeCount + triVert1;
+      uint32_t n3 = currentNodeCount + triVert2;
 
       this->_bendConstraints.push_back(createBendConstraint(
           this->_constraintId++,
           w,
-          this->_nodes[triId1],
-          this->_nodes[vId1],
-          this->_nodes[vId2],
-          this->_nodes[triId2]));
+          this->_nodes[n0],
+          this->_nodes[n1],
+          this->_nodes[n2],
+          this->_nodes[n3]));
     }
-
   }
     
   //add triangles
