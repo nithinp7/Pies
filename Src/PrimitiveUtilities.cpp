@@ -74,6 +74,36 @@ void Solver::addNodes(const std::vector<glm::vec3>& vertices) {
   this->renderStateDirty = true;
 }
 
+void Solver::addFixedRegions(
+    const std::vector<glm::mat4>& regionMatrices,
+    float w) {
+  // Adds fixed position constraints to all nodes inside any of the bounding
+  // boxes specified by the region matrices
+
+  // This is not particularly efficient, but it should only need to be done once
+  // during setup
+  // TODO: Could speed up with spatial hash if this is super slow
+  std::vector<glm::mat4> worldToRegionMatrices;
+  worldToRegionMatrices.reserve(regionMatrices.size());
+  for (const glm::mat4& region : regionMatrices) {
+    worldToRegionMatrices.push_back(glm::inverse(region));
+  }
+
+  for (const Node& node : this->_nodes) {
+    glm::vec4 pos = glm::vec4(node.position, 1.0f);
+
+    for (const glm::mat4& worldToRegion : worldToRegionMatrices) {
+      glm::vec4 local = worldToRegion * pos;
+      if (-1.0f <= local.x && local.x <= 1.0f && -1.0f <= local.y &&
+          local.y <= 1.0f && -1.0f <= local.z && local.z <= 1.0f) {
+        this->_positionConstraints.push_back(
+            createPositionConstraint(this->_constraintId++, node, w));
+        break;
+      }
+    }
+  }
+}
+
 void Solver::addTriMeshVolume(
     const std::vector<glm::vec3>& vertices,
     const std::vector<uint32_t>& indices,
@@ -91,25 +121,19 @@ void Solver::addTriMeshVolume(
   tetgenio tetgenInput{};
   tetgenInput.numberofpoints = static_cast<int>(vertices.size());
   tetgenInput.pointlist = new double[vertices.size() * 3];
-  tetgenInput.pointmarkerlist = new int[vertices.size()];
   for (size_t i = 0; i < vertices.size(); ++i) {
     const glm::vec3& vertex = vertices[i];
     tetgenInput.pointlist[3 * i + 0] = vertex.x;
     tetgenInput.pointlist[3 * i + 1] = vertex.y;
     tetgenInput.pointlist[3 * i + 2] = vertex.z;
-
-    tetgenInput.pointmarkerlist[i] = 1;
   }
 
   tetgenInput.numberoffacets = static_cast<int>(indices.size() / 3);
-  tetgenInput.facetmarkerlist = new int[indices.size() / 3];
   tetgenInput.facetlist = new tetgenio::facet[tetgenInput.numberoffacets];
   for (int i = 0; i < tetgenInput.numberoffacets; ++i) {
     tetgenio::facet& face = tetgenInput.facetlist[i];
     face.numberofpolygons = 1;
     face.polygonlist = new tetgenio::polygon[1];
-
-    tetgenInput.facetmarkerlist[i] = 1;
 
     face.polygonlist[0].numberofvertices = 3;
     face.polygonlist[0].vertexlist = new int[3];
@@ -128,6 +152,11 @@ void Solver::addTriMeshVolume(
   behavior.facesout = 1;
   behavior.neighout = 2;
   behavior.zeroindex = 1;
+  behavior.quality = 1;
+  behavior.minratio = 1.5;
+
+  behavior.regionattrib = 1;
+  // 1414;
 
   // tetgenbehavior behavior{};
   // // behavior.addinfilename = "pq1.414a0.1aA";
@@ -139,14 +168,14 @@ void Solver::addTriMeshVolume(
   // //414;
 
   // behavior.varvolume = 1;
-  // behavior.maxvolume = 0.1; 
+  // behavior.maxvolume = 0.1;
   // //behavior.nomergefacet = 1;
   // behavior.facesout = 1;
   // behavior.zeroindex = 1;
   // //behavior.regionattrib = 1;
   // //behavior.plc = 1;
   // //behavior.nofacewritten = 1;
-  
+
   tetrahedralize(&behavior, &tetgenInput, &tetgenOutput);
 
   size_t existingNodesCount = this->_nodes.size();
@@ -170,12 +199,9 @@ void Solver::addTriMeshVolume(
     Triangle& tri = this->_triangles.emplace_back();
 
     // Switch winding so normals point outward
-    tri.nodeIds[0] = static_cast<uint32_t>(
-        existingNodesCount + v0);
-    tri.nodeIds[1] = static_cast<uint32_t>(
-        existingNodesCount + v2);
-    tri.nodeIds[2] = static_cast<uint32_t>(
-        existingNodesCount + v1); 
+    tri.nodeIds[0] = static_cast<uint32_t>(existingNodesCount + v0);
+    tri.nodeIds[1] = static_cast<uint32_t>(existingNodesCount + v2);
+    tri.nodeIds[2] = static_cast<uint32_t>(existingNodesCount + v1);
   }
 
   this->_nodes.reserve(existingNodesCount + tetgenOutput.numberofpoints);
