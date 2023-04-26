@@ -15,6 +15,9 @@ void DistanceConstraintProjection::operator()(
   const Node& a = nodes[nodeIds[0]];
   const Node& b = nodes[nodeIds[1]];
 
+  projected[0] = a.position;
+  projected[1] = b.position;
+
   glm::vec3 diff = b.position - a.position;
   float dist = glm::length(diff);
 
@@ -28,8 +31,8 @@ void DistanceConstraintProjection::operator()(
 
   float wSum = a.invMass + b.invMass;
 
-  projected[0] = -disp * dir;     // a.position - disp * dir * a.invMass / wSum;
-  projected[1] = glm::vec3(0.0f); // b.position + disp * dir * b.invMass / wSum;
+  projected[0] += -disp * dir;     // a.position - disp * dir * a.invMass / wSum;
+  // projected[1] += glm::vec3(0.0f); // b.position + disp * dir * b.invMass / wSum;
 }
 
 DistanceConstraint

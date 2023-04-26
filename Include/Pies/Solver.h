@@ -82,6 +82,9 @@ public:
       const std::vector<glm::vec3>& vertices,
       const std::vector<uint32_t>& triIndices,
       float w);
+  void addFixedRegions(
+      const std::vector<glm::mat4>& regionMatrices,
+      float w);
 
   // Utilities for spawning primitives
   void createBox(const glm::vec3& translation, float scale, float w);
