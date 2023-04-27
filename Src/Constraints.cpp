@@ -183,6 +183,25 @@ TetrahedralConstraint createTetrahedralConstraint(
       {x1.id, x2.id, x3.id, x4.id});
 }
 
+static glm::vec3
+computeD(const glm::vec3& sigma, float omegaMin, float omegaMax) {
+  const uint32_t COMP_D_ITERS = 10;
+  glm::vec3 D(0.0f);
+  for (uint32_t i = 0; i < COMP_D_ITERS; ++i) {
+    glm::vec3 sigmaPlusD = sigma + D;
+    float product = sigmaPlusD.x * sigmaPlusD.y * sigmaPlusD.z;
+    float omega = glm::clamp(product, omegaMin, omegaMax);
+    float C = product - omega;
+    glm::vec3 gradC(
+        sigmaPlusD.y * sigmaPlusD.z,
+        sigmaPlusD.x * sigmaPlusD.z,
+        sigmaPlusD.x * sigmaPlusD.y);
+    D = (glm::dot(gradC, D) - C) * gradC / glm::dot(gradC, gradC);
+  }
+
+  return D;
+}
+
 void VolumeConstraintProjection::operator()(
     const std::vector<Node>& nodes,
     const std::array<uint32_t, 4>& nodeIds,
@@ -192,26 +211,47 @@ void VolumeConstraintProjection::operator()(
   const Node& x3 = nodes[nodeIds[2]];
   const Node& x4 = nodes[nodeIds[3]];
 
-  glm::vec3 x21 = x2.position - x1.position;
-  glm::vec3 x31 = x3.position - x1.position;
-  glm::vec3 x41 = x4.position - x1.position;
+  glm::mat3 P(
+      x2.position - x1.position,
+      x3.position - x1.position,
+      x4.position - x1.position);
 
-  glm::vec3 dCdx2 = glm::cross(x31, x41) / 6.0f;
-  glm::vec3 dCdx3 = glm::cross(x41, x21) / 6.0f;
-  glm::vec3 dCdx4 = glm::cross(x21, x31) / 6.0f;
-  glm::vec3 dCdx1 = -dCdx2 - dCdx3 - dCdx4;
+  // Deformation gradient
+  glm::mat3 F = P * this->Qinv;
+  Eigen::Matrix3f F_;
+  F_ << F[0][0], F[0][1], F[0][2], F[1][0], F[1][1], F[1][2], F[2][0], F[2][1],
+      F[2][2];
 
-  float C = glm::dot(dCdx4, x41) - this->targetVolume;
-  float dCdX_magsq = glm::dot(dCdx1, dCdx1) + glm::dot(dCdx2, dCdx2) +
-                     glm::dot(dCdx3, dCdx3) + glm::dot(dCdx4, dCdx4);
+  Eigen::JacobiSVD<Eigen::Matrix3f> svdF(
+      F_,
+      Eigen::ComputeFullU | Eigen::ComputeFullV);
+  Eigen::Vector3f singularValues = svdF.singularValues();
+  glm::vec3 D = computeD(
+      glm::vec3(singularValues[0], singularValues[1], singularValues[2]),
+      this->minOmega,
+      this->maxOmega);
+  singularValues[0] += D.x;
+  singularValues[1] += D.y;
+  singularValues[2] += D.z;
 
-  float lambda = -C / dCdX_magsq;
-  float wSum = x1.invMass + x2.invMass + x3.invMass + x4.invMass;
+  // The "fixed" deformation gradient
+  Eigen::Matrix3f Fhat =
+      svdF.matrixU() * singularValues.asDiagonal() * svdF.matrixV().transpose();
+  glm::mat3 P1 = glm::transpose(glm::mat3(
+      Fhat.coeff(0, 0),
+      Fhat.coeff(1, 0),
+      Fhat.coeff(2, 0),
+      Fhat.coeff(0, 1),
+      Fhat.coeff(1, 1),
+      Fhat.coeff(2, 1),
+      Fhat.coeff(0, 2),
+      Fhat.coeff(1, 2),
+      Fhat.coeff(2, 2)));
 
-  projected[0] = x1.position + lambda * dCdx1 * x1.invMass / wSum;
-  projected[1] = x2.position + lambda * dCdx2 * x2.invMass / wSum;
-  projected[2] = x3.position + lambda * dCdx3 * x3.invMass / wSum;
-  projected[3] = x4.position + lambda * dCdx4 * x4.invMass / wSum;
+  projected[0] = glm::vec3(0.0f);
+  projected[1] = P1[0];
+  projected[2] = P1[1];
+  projected[3] = P1[2];
 }
 
 VolumeConstraint createVolumeConstraint(
@@ -221,29 +261,51 @@ VolumeConstraint createVolumeConstraint(
     const Node& x2,
     const Node& x3,
     const Node& x4,
+    // TODO: Still use vol multiplier??
     float volumeMultiplier) {
-  // A == B
+  // Converts world positions to differential coords
+  Eigen::Matrix<float, 3, 4> worldToDiff = Eigen::Matrix<float, 3, 4>::Zero();
+  worldToDiff.coeffRef(0, 0) = -1.0f;
+  worldToDiff.coeffRef(1, 0) = -1.0f;
+  worldToDiff.coeffRef(2, 0) = -1.0f;
+
+  worldToDiff.coeffRef(0, 1) = 1.0f;
+  worldToDiff.coeffRef(1, 2) = 1.0f;
+  worldToDiff.coeffRef(2, 3) = 1.0f;
+
+  // Converts barycentric coords to world differential cords
+  glm::mat3 baryToDiff(
+      x2.position - x1.position,
+      x3.position - x1.position,
+      x4.position - x1.position);
+  glm::mat3 diffToBary = glm::inverse(baryToDiff);
+
+  Eigen::Matrix3f diffToBary_;
+  diffToBary_ << diffToBary[0][0], diffToBary[0][1], diffToBary[0][2],
+      diffToBary[1][0], diffToBary[1][1], diffToBary[1][2], diffToBary[2][0],
+      diffToBary[2][1], diffToBary[2][2];
+
+  Eigen::Matrix<float, 3, 4> A_ = diffToBary_ * worldToDiff;
   Eigen::Matrix4f A = Eigen::Matrix4f::Zero();
-  A.coeffRef(1, 0) = -1.0f;
-  A.coeffRef(2, 0) = -1.0f;
-  A.coeffRef(3, 0) = -1.0f;
+  // A.coeffRef(1, 0) = -1.0f;
+  // A.coeffRef(2, 0) = -1.0f;
+  // A.coeffRef(3, 0) = -1.0f;
 
-  A.coeffRef(1, 1) = 1.0f;
-  A.coeffRef(2, 2) = 1.0f;
-  A.coeffRef(3, 3) = 1.0f;
+  // A.coeffRef(1, 1) = 1.0f;
+  // A.coeffRef(2, 2) = 1.0f;
+  // A.coeffRef(3, 3) = 1.0f;
 
-  glm::vec3 x21 = x2.position - x1.position;
-  glm::vec3 x31 = x3.position - x1.position;
-  glm::vec3 x41 = x4.position - x1.position;
+  A.row(0) << 0.0f, 0.0f, 0.0f, 0.0f;
+  A.row(1) = A_.row(0);
+  A.row(2) = A_.row(1);
+  A.row(3) = A_.row(2);
 
-  float targetVolume =
-      volumeMultiplier * glm::dot(glm::cross(x21, x31), x41) / 6.0f;
   return VolumeConstraint(
       id,
       w,
       A,
-      A,
-      {targetVolume},
+      Eigen::Matrix4f::Identity(),
+      {diffToBary, 0.9f, 1.1f},
       {x1.id, x2.id, x3.id, x4.id});
 }
 
