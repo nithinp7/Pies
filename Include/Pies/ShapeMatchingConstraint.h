@@ -4,6 +4,8 @@
 
 #include <Eigen/Core>
 #include <Eigen/Sparse>
+#include <Eigen/Dense>
+
 #include <glm/glm.hpp>
 
 #include <cstdint>
@@ -13,6 +15,7 @@ namespace Pies {
 class ShapeMatchingConstraint {
 public:
   ShapeMatchingConstraint(
+      const std::vector<Node>& nodes,
       const std::vector<uint32_t>& indices,
       const std::vector<glm::vec3>& materialCoordinates,
       float w);
@@ -24,11 +27,12 @@ public:
 
 private:
   std::vector<uint32_t> _nodeIndices;
+  Eigen::MatrixXd _materialCoords;
 
-  Eigen::MatrixXf _currentPositions;
-  Eigen::MatrixXf _materialCoordinates;
+  Eigen::Matrix3d _Qinv;
 
-  Eigen::MatrixXf _projectedPositions;
+  Eigen::MatrixXd _projectedPositions;
+  Eigen::Quaterniond _currentRotation;
   
   float _w;
 };

@@ -129,7 +129,8 @@ void Solver::addLinkedRegions(
     }
 
     if (materialCoords.size() >= 3) {
-      this->_shapeConstraints.emplace_back(nodeIndices, materialCoords, w);
+      this->_shapeConstraints
+          .emplace_back(this->_nodes, nodeIndices, materialCoords, w);
     }
 
     materialCoords.clear();
@@ -1002,7 +1003,8 @@ void Solver::createShapeMatchingBox(
     materialCoords[i] = this->_nodes[nodeId].position;
   }
 
-  this->_shapeConstraints.emplace_back(nodeIndices, materialCoords, w);
+  this->_shapeConstraints.emplace_back(
+        this->_nodes, nodeIndices, materialCoords, w);
 
   this->_vertices.resize(this->_nodes.size());
   for (size_t i = currentNodeCount; i < this->_nodes.size(); ++i) {
@@ -1077,10 +1079,8 @@ void Solver::createShapeMatchingSheet(
   this->_shapeConstraints.reserve(
       this->_shapeConstraints.size() + patchWidth * patchHeight);
   for (const ShapeMatchingPatch& patch : patches) {
-    this->_shapeConstraints.emplace_back(
-        patch.indices,
-        patch.materialCoords,
-        w);
+    this->_shapeConstraints
+        .emplace_back(this->_nodes, patch.indices, patch.materialCoords, w);
   }
 
   this->_vertices.resize(this->_nodes.size());

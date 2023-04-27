@@ -98,10 +98,9 @@ void TetrahedralConstraintProjection::operator()(
       F_,
       Eigen::ComputeFullU | Eigen::ComputeFullV);
   Eigen::Vector3f singularValues = svdF.singularValues();
-  float omegaMin = 0.8f;
-  float omegaMax = 1.0f;
   for (uint32_t i = 0; i < 3; ++i) {
-    singularValues[i] = glm::clamp(singularValues[i], omegaMin, omegaMax);
+    singularValues[i] =
+        glm::clamp(singularValues[i], this->minStrain, this->maxStrain);
   }
 
   if (glm::determinant(F) < 0.0f) {
