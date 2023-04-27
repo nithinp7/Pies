@@ -106,21 +106,56 @@ void Solver::addClothMesh(
 
   std::unordered_map<Edge, Adjacency> adjacencyMap;
 
-  for (uint32_t i = 0; i < indices.size() - 1; ++i) {
-    Edge e{};
-    e.vertexId1 = indices[i];
-    e.vertexId2 = indices[i + 1];
+  for (uint32_t i = 0; i < indices.size(); i+=3) {
 
-    if (e.vertexId1 > e.vertexId2) {
-      std::swap(e.vertexId1, e.vertexId2);
+    Edge e1{};
+	e1.vertexId1 = indices[i];
+	e1.vertexId2 = indices[i + 1];
+        
+    if (e1.vertexId1 > e1.vertexId2) {
+      std::swap(e1.vertexId1, e1.vertexId2);
     }
     
-    auto eIt = adjacencyMap.find(e);
+    auto eIt = adjacencyMap.find(e1);
     if (eIt == adjacencyMap.end()) {
-      adjacencyMap.emplace(e, Adjacency{i/3, std::nullopt});
-    } else {
+      adjacencyMap.emplace(e1, Adjacency{i/3, std::nullopt});
+    }
+    else {
       eIt->second.triId2 = i/3;
     }
+
+    Edge e2{};
+	e2.vertexId1 = indices[i + 1];
+	e2.vertexId2 = indices[i + 2];
+        
+    if (e2.vertexId1 > e2.vertexId2) {
+      std::swap(e2.vertexId1, e2.vertexId2);
+    }
+    
+    eIt = adjacencyMap.find(e2);
+    if (eIt == adjacencyMap.end()) {
+      adjacencyMap.emplace(e2, Adjacency{i/3, std::nullopt});
+    }
+    else {
+      eIt->second.triId2 = i/3;
+    }
+
+    Edge e3{};
+	e3.vertexId1 = indices[i + 2];
+	e3.vertexId2 = indices[i];
+        
+    if (e3.vertexId1 > e3.vertexId2) {
+      std::swap(e3.vertexId1, e3.vertexId2);
+    }
+    
+    eIt = adjacencyMap.find(e3);
+    if (eIt == adjacencyMap.end()) {
+      adjacencyMap.emplace(e3, Adjacency{i/3, std::nullopt});
+    }
+    else {
+      eIt->second.triId2 = i/3;
+    }
+
   }
 
   for (uint32_t i = 0; i < indices.size(); i += 3) {
@@ -141,8 +176,7 @@ void Solver::addClothMesh(
         this->_nodes[currentNodeCount + vId1],
         this->_nodes[currentNodeCount + vId2],
 		w));
-    
-    //TODO: bend constraint
+   
     if (adjIt.second.triId2.has_value()) {
       
       uint32_t triId1 = adjIt.second.triId * 3;
@@ -151,7 +185,6 @@ void Solver::addClothMesh(
       uint32_t triVert1 = 0;
       uint32_t triVert2 = 0;
         
-      //TODO: CHECK TRI VERTS FOR REPEAT
       if (indices[triId1] != vId1 && indices[triId1] != vId2) {
         triVert1 = indices[triId1];
       }
@@ -187,8 +220,6 @@ void Solver::addClothMesh(
     }
   }
     
-  //add triangles
- 
   //list of pairs, <nodeid, nodeid>
 
   this->renderStateDirty = true;
