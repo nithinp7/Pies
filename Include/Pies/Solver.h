@@ -85,6 +85,9 @@ public:
   void addFixedRegions(
       const std::vector<glm::mat4>& regionMatrices,
       float w);
+  void addLinkedRegions(
+      const std::vector<glm::mat4>& regionsMatrices,
+      float w);
 
   // Utilities for spawning primitives
   void createBox(const glm::vec3& translation, float scale, float w);

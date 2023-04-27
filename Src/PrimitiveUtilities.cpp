@@ -104,6 +104,39 @@ void Solver::addFixedRegions(
   }
 }
 
+void Solver::addLinkedRegions(
+    const std::vector<glm::mat4>& regionMatrices,
+    float w) {
+  // Adds shape matching constraints to all nodes inside each of the
+  // bounding boxes specified by the region matrices
+
+  // This is not particularly efficient, but it should only need to be done once
+  // during setup
+  // TODO: Could speed up with spatial hash if this is super slow
+  std::vector<glm::vec3> materialCoords;
+  std::vector<uint32_t> nodeIndices;
+  for (const glm::mat4& region : regionMatrices) {
+    glm::mat4 worldToRegion = glm::inverse(region);
+
+    for (const Node& node : this->_nodes) {
+      glm::vec4 pos = glm::vec4(node.position, 1.0f);
+      glm::vec4 local = worldToRegion * pos;
+      if (-1.0f <= local.x && local.x <= 1.0f && -1.0f <= local.y &&
+          local.y <= 1.0f && -1.0f <= local.z && local.z <= 1.0f) {
+        materialCoords.push_back(node.position);
+        nodeIndices.push_back(node.id);
+      }
+    }
+
+    if (materialCoords.size() >= 3) {
+      this->_shapeConstraints.emplace_back(nodeIndices, materialCoords, w);
+    }
+
+    materialCoords.clear();
+    nodeIndices.clear();
+  }
+}
+
 void Solver::addTriMeshVolume(
     const std::vector<glm::vec3>& vertices,
     const std::vector<uint32_t>& indices,
