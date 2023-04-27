@@ -167,6 +167,9 @@ struct TetrahedralConstraintProjection {
   glm::mat3 Q;
   glm::mat3 Qinv;
 
+  float minStrain;
+  float maxStrain;
+
   void operator()(
       const std::vector<Node>& nodes,
       const std::array<uint32_t, 4>& nodeIds,
@@ -179,7 +182,9 @@ TetrahedralConstraint createTetrahedralConstraint(
     const Node& a,
     const Node& b,
     const Node& c,
-    const Node& d);
+    const Node& d,
+    float minStrain = 0.8f,
+    float maxStrain = 1.0f);
 
 struct VolumeConstraintProjection {
   float targetVolume;
@@ -196,17 +201,8 @@ VolumeConstraint createVolumeConstraint(
     const Node& a,
     const Node& b,
     const Node& c,
-    const Node& d);
-// struct CollisionConstraintProjection {
-//   glm::vec3 intersection;
-//   glm::vec3 normal;
-
-//   void operator()(
-//       const std::array<Node*, 2>& nodes,
-//       std::array<glm::vec3, 2>& projected) const;
-// };
-// typedef Constraint<2, CollisionConstraintProjection> CollisionConstraint;
-// CollisionConstraint createCollisionConstraint(uint32_t id, Node* a, Node* b);
+    const Node& d,
+    float volumeMultiplier = 1.0f);
 
 struct BendConstraintProjection {
   float initialAngle;

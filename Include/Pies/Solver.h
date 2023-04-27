@@ -81,9 +81,16 @@ public:
   void addTriMeshVolume(
       const std::vector<glm::vec3>& vertices,
       const std::vector<uint32_t>& triIndices,
-      float w);
+      float strainStiffness,
+      float minStrain,
+      float maxStrain,
+      float volumeStiffness,
+      float volumeMultiplier);
   void addFixedRegions(
       const std::vector<glm::mat4>& regionMatrices,
+      float w);
+  void addLinkedRegions(
+      const std::vector<glm::mat4>& regionsMatrices,
       float w);
 
   // Utilities for spawning primitives
