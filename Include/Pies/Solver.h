@@ -115,7 +115,6 @@ public:
   void createBendSheet(const glm::vec3& translation, float scale, float w);
 
 private:
-  void _computeCollisions();
   void _parallelComputeCollisions();
   void _parallelPointTriangleCollisions();
 

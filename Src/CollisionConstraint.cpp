@@ -319,7 +319,6 @@ void EdgeCollisionConstraint::stabilizeCollisions(std::vector<Node>& nodes) {
   Node& nodeC = nodes[nodeIds[2]];
   Node& nodeD = nodes[nodeIds[3]];
 
-
   glm::vec3 ab = nodeB.position - nodeA.position;
   glm::vec3 ac = nodeC.position - nodeA.position;
   glm::vec3 ad = nodeD.position - nodeA.position;
@@ -437,20 +436,22 @@ void EdgeCollisionConstraint::setupGlobalForceVector(
   }
 }
 
-StaticCollisionConstraint::StaticCollisionConstraint(
-    const Node& node,
-    const glm::vec3& projectedPosition_)
-    : nodeId(node.id), projectedPosition(projectedPosition_), n(0.0f) {
-  glm::vec3 diff = projectedPosition - node.position;
-  float dist = glm::length(diff);
-  if (dist > 0.00001f) {
-    n = diff / dist;
-  }
-}
+StaticCollisionConstraint::StaticCollisionConstraint(const Node& node)
+    : nodeId(node.id) {}
 
 void StaticCollisionConstraint::setupCollisionMatrix(
     Eigen::SparseMatrix<float>& systemMatrix) const {
   systemMatrix.coeffRef(nodeId, nodeId) += this->w;
+}
+
+void StaticCollisionConstraint::projectToAuxiliaryVariable(
+    const std::vector<Node>& nodes) {
+  const Node& node = nodes[nodeId];
+  projectedPosition = node.position;
+
+  if (node.position.y < 0.0f) {
+    projectedPosition.y = 0.0f;
+  }
 }
 
 void StaticCollisionConstraint::setupGlobalForceVector(

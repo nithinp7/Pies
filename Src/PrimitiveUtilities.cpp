@@ -828,7 +828,7 @@ void Solver::createSheet(
     float scale,
     float mass,
     float w) {
-  Grid grid{10, 10, 1};
+  Grid grid{20, 20, 1};
 
   size_t currentNodeCount = this->_nodes.size();
   size_t currentDistConstraintsCount = this->_distanceConstraints.size();
