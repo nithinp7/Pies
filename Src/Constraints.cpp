@@ -261,8 +261,8 @@ VolumeConstraint createVolumeConstraint(
     const Node& x2,
     const Node& x3,
     const Node& x4,
-    // TODO: Still use vol multiplier??
-    float volumeMultiplier) {
+    float compression,
+    float stretching) {
   // Converts world positions to differential coords
   Eigen::Matrix<float, 3, 4> worldToDiff = Eigen::Matrix<float, 3, 4>::Zero();
   worldToDiff.coeffRef(0, 0) = -1.0f;
@@ -305,7 +305,7 @@ VolumeConstraint createVolumeConstraint(
       w,
       A,
       Eigen::Matrix4f::Identity(),
-      {diffToBary, 0.9f, 1.1f},
+      {diffToBary, compression, stretching},
       {x1.id, x2.id, x3.id, x4.id});
 }
 

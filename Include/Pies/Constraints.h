@@ -204,7 +204,8 @@ VolumeConstraint createVolumeConstraint(
     const Node& b,
     const Node& c,
     const Node& d,
-    float volumeMultiplier = 1.0f);
+    float compression = 1.0f,
+    float stretching = 1.0f);
 
 struct BendConstraintProjection {
   float initialAngle;

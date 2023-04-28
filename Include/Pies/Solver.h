@@ -3,10 +3,10 @@
 #include "CollisionConstraint.h"
 #include "Constraints.h"
 #include "Node.h"
+#include "ShapeMatchingConstraint.h"
 #include "SpatialHash.h"
 #include "Tetrahedron.h"
 #include "Triangle.h"
-#include "ShapeMatchingConstraint.h"
 
 #include <Eigen/Core>
 #include <Eigen/SparseCholesky>
@@ -14,8 +14,8 @@
 
 #include <cstdint>
 #include <memory>
-#include <vector>
 #include <thread>
+#include <vector>
 
 namespace Pies {
 enum class SolverName { PBD, PD };
@@ -29,8 +29,8 @@ struct SolverOptions {
   float collisionThickness = 0.05f;
   float gravity = 10.0f;
   float damping = 0.006f;
-  float friction = 0.01f;//1f;
-  float staticFrictionThreshold = 0.f;//1.0f;
+  float friction = 0.01f;              // 1f;
+  float staticFrictionThreshold = 0.f; // 1.0f;
   float floorHeight = 0.0f;
   float gridSpacing = 2.0f;
   uint32_t threadCount = 8;
@@ -77,17 +77,16 @@ public:
   void addTriMeshVolume(
       const std::vector<glm::vec3>& vertices,
       const std::vector<uint32_t>& triIndices,
+      const glm::vec3& initialVelocity,
+      float density,
       float strainStiffness,
       float minStrain,
       float maxStrain,
       float volumeStiffness,
-      float volumeMultiplier);
-  void addFixedRegions(
-      const std::vector<glm::mat4>& regionMatrices,
-      float w);
-  void addLinkedRegions(
-      const std::vector<glm::mat4>& regionsMatrices,
-      float w);
+      float compression,
+      float stretching);
+  void addFixedRegions(const std::vector<glm::mat4>& regionMatrices, float w);
+  void addLinkedRegions(const std::vector<glm::mat4>& regionsMatrices, float w);
 
   // Utilities for spawning primitives
   void createBox(const glm::vec3& translation, float scale, float w);

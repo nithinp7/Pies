@@ -141,16 +141,17 @@ void Solver::addLinkedRegions(
 void Solver::addTriMeshVolume(
     const std::vector<glm::vec3>& vertices,
     const std::vector<uint32_t>& indices,
+    const glm::vec3& initialVelocity,
+    float density,
     float strainStiffness,
     float minStrain,
     float maxStrain,
     float volumeStiffness,
-    float volumeMultiplier) {
+    float compression,
+    float stretching) {
 
-  // TODO: parameterize more of these
-  float mass = 1.0f;
+  float mass = density;
   float radius = 0.5f;
-  glm::vec3 initialVelocity(0.0f);
 
   glm::vec3 color = randColor();
   float roughness = randf();
@@ -266,24 +267,29 @@ void Solver::addTriMeshVolume(
     int v3 = tetgenOutput.tetrahedronlist[4 * i + 2];
     int v4 = tetgenOutput.tetrahedronlist[4 * i + 3];
 
-    this->_tetConstraints.push_back(createTetrahedralConstraint(
-        this->_constraintId++,
-        strainStiffness,
-        this->_nodes[existingNodesCount + v1],
-        this->_nodes[existingNodesCount + v2],
-        this->_nodes[existingNodesCount + v3],
-        this->_nodes[existingNodesCount + v4],
-        minStrain,
-        maxStrain));
+    if (strainStiffness != 0.0f) {
+      this->_tetConstraints.push_back(createTetrahedralConstraint(
+          this->_constraintId++,
+          strainStiffness,
+          this->_nodes[existingNodesCount + v1],
+          this->_nodes[existingNodesCount + v2],
+          this->_nodes[existingNodesCount + v3],
+          this->_nodes[existingNodesCount + v4],
+          minStrain,
+          maxStrain));
+    }
 
-    this->_volumeConstraints.push_back(createVolumeConstraint(
-        this->_constraintId++,
-        volumeStiffness,
-        this->_nodes[existingNodesCount + v1],
-        this->_nodes[existingNodesCount + v2],
-        this->_nodes[existingNodesCount + v3],
-        this->_nodes[existingNodesCount + v4],
-        volumeMultiplier));
+    if (volumeStiffness != 0.0f) {
+      this->_volumeConstraints.push_back(createVolumeConstraint(
+          this->_constraintId++,
+          volumeStiffness,
+          this->_nodes[existingNodesCount + v1],
+          this->_nodes[existingNodesCount + v2],
+          this->_nodes[existingNodesCount + v3],
+          this->_nodes[existingNodesCount + v4],
+          compression,
+          stretching));
+    }
   }
 
   this->_vertices.resize(this->_nodes.size());
