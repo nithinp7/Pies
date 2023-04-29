@@ -85,6 +85,11 @@ public:
       float volumeStiffness,
       float compression,
       float stretching);
+void addClothMesh(
+    const std::vector<glm::vec3>& vertices,
+    const std::vector<uint32_t>& indices,
+    float stretchStiffness,
+    float bendStiffness);
   void addFixedRegions(const std::vector<glm::mat4>& regionMatrices, float w);
   void updateFixedRegions(const std::vector<glm::mat4>& regionMatrices);
   void addLinkedRegions(const std::vector<glm::mat4>& regionsMatrices, float w);
