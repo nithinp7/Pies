@@ -5,7 +5,7 @@ Pies is a constraint- and particle-based, soft-body physics engine based on the 
 <img src="https://github.com/nithinp7/Pies/blob/main/Media/PiesMaya1.gif">
 
 ## Current Features
-- Projective dynamics solver [Bouaziz et. al 2014]
+- Projective dynamics solver
 - Position-based dynamics solver
 - Constraints
   - Fixed-Position
@@ -33,6 +33,8 @@ Pies has been integrated successfully in two places so far, check out the linked
 - [Pies for Maya Repository](https://github.com/nithinp7/PiesForMaya)
 
 <img src="https://github.com/nithinp7/Pies/blob/main/Media/PiesMaya2.gif" width=800>
+
+<img src="https://github.com/nithinp7/Pies/blob/main/Media/PiesMaya3.gif" width=800>
 
 ## Pies for Althea
 
