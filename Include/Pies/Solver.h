@@ -3,10 +3,10 @@
 #include "CollisionConstraint.h"
 #include "Constraints.h"
 #include "Node.h"
+#include "ShapeMatchingConstraint.h"
 #include "SpatialHash.h"
 #include "Tetrahedron.h"
 #include "Triangle.h"
-#include "ShapeMatchingConstraint.h"
 
 #include <Eigen/Core>
 #include <Eigen/SparseCholesky>
@@ -14,23 +14,23 @@
 
 #include <cstdint>
 #include <memory>
-#include <vector>
 #include <thread>
+#include <vector>
 
 namespace Pies {
 enum class SolverName { PBD, PD };
 
 struct SolverOptions {
-  uint32_t iterations = 4;
-  uint32_t collisionIterations = 0;
-  uint32_t collisionStabilizationIterations = 4;
-  float collionStiffness = 1.0f;
-  uint32_t timeSubsteps = 1;
   float fixedTimestepSize = 0.012f;
+  uint32_t timeSubsteps = 1;
+  uint32_t iterations = 4;
+  uint32_t collisionStabilizationIterations = 4;
+  float collisionThresholdDistance = 0.1f;
+  float collisionThickness = 0.05f;
   float gravity = 10.0f;
   float damping = 0.006f;
-  float friction = 0.01f;//1f;
-  float staticFrictionThreshold = 0.f;//1.0f;
+  float friction = 0.01f;              // 1f;
+  float staticFrictionThreshold = 0.f; // 1.0f;
   float floorHeight = 0.0f;
   float gridSpacing = 2.0f;
   uint32_t threadCount = 8;
@@ -77,7 +77,17 @@ public:
   void addTriMeshVolume(
       const std::vector<glm::vec3>& vertices,
       const std::vector<uint32_t>& triIndices,
-      float w);
+      const glm::vec3& initialVelocity,
+      float density,
+      float strainStiffness,
+      float minStrain,
+      float maxStrain,
+      float volumeStiffness,
+      float compression,
+      float stretching);
+  void addFixedRegions(const std::vector<glm::mat4>& regionMatrices, float w);
+  void updateFixedRegions(const std::vector<glm::mat4>& regionMatrices);
+  void addLinkedRegions(const std::vector<glm::mat4>& regionsMatrices, float w);
 
   // Utilities for spawning primitives
   void createBox(const glm::vec3& translation, float scale, float w);
@@ -106,7 +116,6 @@ public:
   void createBendSheet(const glm::vec3& translation, float scale, float w);
 
 private:
-  void _computeCollisions();
   void _parallelComputeCollisions();
   void _parallelPointTriangleCollisions();
 
@@ -136,13 +145,21 @@ private:
   SpatialHash<Triangle, TriCompRange> _spatialHashTris;
   SpatialHash<Tetrahedron, TetCompRange> _spatialHashTets;
 
+  struct FixedRegion {
+    glm::mat4 initialTransform{};
+    glm::mat4 invInitialTransform{};
+    uint32_t goalMatchingConstraint{};
+  };
+
   std::vector<Node> _nodes;
   std::vector<Tetrahedron> _tets;
+  std::vector<FixedRegion> _fixedRegions;
   std::vector<PositionConstraint> _positionConstraints;
   std::vector<DistanceConstraint> _distanceConstraints;
   std::vector<TetrahedralConstraint> _tetConstraints;
   std::vector<VolumeConstraint> _volumeConstraints;
   std::vector<ShapeMatchingConstraint> _shapeConstraints;
+  std::vector<GoalMatchingConstraint> _goalConstraints;
   std::vector<BendConstraint> _bendConstraints;
 
   uint32_t _previousNodeCount = 0;

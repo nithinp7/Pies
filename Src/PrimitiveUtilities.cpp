@@ -74,15 +74,107 @@ void Solver::addNodes(const std::vector<glm::vec3>& vertices) {
   this->renderStateDirty = true;
 }
 
+void Solver::addFixedRegions(
+    const std::vector<glm::mat4>& regionMatrices,
+    float w) {
+  // Adds fixed position constraints to all nodes inside any of the bounding
+  // boxes specified by the region matrices
+
+  // This is not particularly efficient, but it should only need to be done once
+  // during setup
+  // TODO: Could speed up with spatial hash if this is super slow
+  size_t currentGoalConstraintCount = this->_goalConstraints.size();
+  this->_goalConstraints.reserve(
+      currentGoalConstraintCount + regionMatrices.size());
+
+  size_t currentFixedRegionsCount = this->_fixedRegions.size();
+  this->_fixedRegions.reserve(currentFixedRegionsCount + regionMatrices.size());
+  for (const glm::mat4& regionToWorld : regionMatrices) {
+    FixedRegion region;
+    region.initialTransform = regionToWorld;
+    region.invInitialTransform = glm::inverse(regionToWorld);
+    region.goalMatchingConstraint = this->_goalConstraints.size();
+
+    std::vector<uint32_t> constrainedNodes;
+
+    for (const Node& node : this->_nodes) {
+      glm::vec4 pos = glm::vec4(node.position, 1.0f);
+      glm::vec4 local = region.invInitialTransform * pos;
+      if (-1.0f <= local.x && local.x <= 1.0f && -1.0f <= local.y &&
+          local.y <= 1.0f && -1.0f <= local.z && local.z <= 1.0f) {
+        constrainedNodes.push_back(node.id);
+      }
+    }
+
+    this->_goalConstraints.emplace_back(this->_nodes, constrainedNodes, w);
+    this->_fixedRegions.push_back(region);
+  }
+}
+
+void Solver::updateFixedRegions(const std::vector<glm::mat4>& regionMatrices) {
+  if (regionMatrices.size() != this->_fixedRegions.size()) {
+    assert(false);
+    return;
+  }
+
+  for (uint32_t i = 0; i < this->_fixedRegions.size(); ++i) {
+    const glm::mat4& currentRegionTransform = regionMatrices[i];
+    const FixedRegion& region = this->_fixedRegions[i];
+    // transform = regionToCurrentWorld * initialWorldToRegion
+    glm::mat4 transform = currentRegionTransform * region.invInitialTransform;
+    this->_goalConstraints[region.goalMatchingConstraint].setTransform(
+        transform);
+  }
+}
+
+void Solver::addLinkedRegions(
+    const std::vector<glm::mat4>& regionMatrices,
+    float w) {
+  // Adds shape matching constraints to all nodes inside each of the
+  // bounding boxes specified by the region matrices
+
+  // This is not particularly efficient, but it should only need to be done once
+  // during setup
+  // TODO: Could speed up with spatial hash if this is super slow
+  std::vector<glm::vec3> materialCoords;
+  std::vector<uint32_t> nodeIndices;
+  for (const glm::mat4& region : regionMatrices) {
+    glm::mat4 worldToRegion = glm::inverse(region);
+
+    for (const Node& node : this->_nodes) {
+      glm::vec4 pos = glm::vec4(node.position, 1.0f);
+      glm::vec4 local = worldToRegion * pos;
+      if (-1.0f <= local.x && local.x <= 1.0f && -1.0f <= local.y &&
+          local.y <= 1.0f && -1.0f <= local.z && local.z <= 1.0f) {
+        materialCoords.push_back(node.position);
+        nodeIndices.push_back(node.id);
+      }
+    }
+
+    if (materialCoords.size() >= 3) {
+      this->_shapeConstraints
+          .emplace_back(this->_nodes, nodeIndices, materialCoords, w);
+    }
+
+    materialCoords.clear();
+    nodeIndices.clear();
+  }
+}
+
 void Solver::addTriMeshVolume(
     const std::vector<glm::vec3>& vertices,
     const std::vector<uint32_t>& indices,
-    float w) {
+    const glm::vec3& initialVelocity,
+    float density,
+    float strainStiffness,
+    float minStrain,
+    float maxStrain,
+    float volumeStiffness,
+    float compression,
+    float stretching) {
 
-  // TODO: parameterize more of these
-  float mass = 1.0f;
+  float mass = density;
   float radius = 0.5f;
-  glm::vec3 initialVelocity(0.0f);
 
   glm::vec3 color = randColor();
   float roughness = randf();
@@ -98,8 +190,6 @@ void Solver::addTriMeshVolume(
     tetgenInput.pointlist[3 * i + 2] = vertex.z;
   }
 
-  // TODO: Is there any advantage to _not_ treating each triangle as its own
-  // face??
   tetgenInput.numberoffacets = static_cast<int>(indices.size() / 3);
   tetgenInput.facetlist = new tetgenio::facet[tetgenInput.numberoffacets];
   for (int i = 0; i < tetgenInput.numberoffacets; ++i) {
@@ -117,19 +207,69 @@ void Solver::addTriMeshVolume(
     face.holelist = nullptr;
   }
 
+  tetgenio tetgenInterm{};
   tetgenio tetgenOutput{};
   tetgenbehavior behavior{};
+  behavior.plc = 1;
+  behavior.facesout = 1;
+  behavior.neighout = 2;
+  behavior.zeroindex = 1;
+  behavior.quality = 1;
+  behavior.minratio = 1.5;
+
+  behavior.regionattrib = 1;
+  // 1414;
+
+  // tetgenbehavior behavior{};
+  // // behavior.addinfilename = "pq1.414a0.1aA";
+  // behavior.cdt = 1;
+  // behavior.plc = 1;
+  // behavior.refine = 1;
+  // behavior.quality = 1;
+  // behavior.minratio = 1.1;
+  // //414;
+
+  // behavior.varvolume = 1;
+  // behavior.maxvolume = 0.1;
+  // //behavior.nomergefacet = 1;
+  // behavior.facesout = 1;
+  // behavior.zeroindex = 1;
+  // //behavior.regionattrib = 1;
+  // //behavior.plc = 1;
+  // //behavior.nofacewritten = 1;
 
   tetrahedralize(&behavior, &tetgenInput, &tetgenOutput);
 
-  // tetgenOutput.tetrahedronlist()
   size_t existingNodesCount = this->_nodes.size();
   size_t existingTetsCount = this->_tetConstraints.size();
+  size_t existingVolumesCount = this->_volumeConstraints.size();
+  size_t existingTrisCount = this->_triangles.size();
+
+  this->_triangles.reserve(existingTrisCount + tetgenOutput.numberoftrifaces);
+  for (size_t i = 0; i < tetgenOutput.numberoftrifaces; ++i) {
+    int v0 = tetgenOutput.trifacelist[3 * i];
+    int v1 = tetgenOutput.trifacelist[3 * i + 1];
+    int v2 = tetgenOutput.trifacelist[3 * i + 2];
+
+    int t0 = tetgenOutput.face2tetlist[2 * i];
+    int t1 = tetgenOutput.face2tetlist[2 * i + 1];
+
+    if (t0 >= 0 && t1 >= 0) {
+      continue;
+    }
+
+    Triangle& tri = this->_triangles.emplace_back();
+
+    // Switch winding so normals point outward
+    tri.nodeIds[0] = static_cast<uint32_t>(existingNodesCount + v0);
+    tri.nodeIds[1] = static_cast<uint32_t>(existingNodesCount + v2);
+    tri.nodeIds[2] = static_cast<uint32_t>(existingNodesCount + v1);
+  }
 
   this->_nodes.reserve(existingNodesCount + tetgenOutput.numberofpoints);
   for (int i = 0; i < tetgenOutput.numberofpoints; i++) {
     Node& node = this->_nodes.emplace_back();
-    node.id = existingNodesCount + i;
+    node.id = static_cast<uint32_t>(this->_nodes.size() - 1);
     node.position = glm::vec3(
         static_cast<float>(tetgenOutput.pointlist[3 * i + 0]),
         static_cast<float>(tetgenOutput.pointlist[3 * i + 1]),
@@ -142,19 +282,37 @@ void Solver::addTriMeshVolume(
 
   this->_tetConstraints.reserve(
       existingTetsCount + tetgenOutput.numberoftetrahedra);
+  this->_volumeConstraints.reserve(
+      existingVolumesCount + tetgenOutput.numberoftetrahedra);
   for (int i = 0; i < tetgenOutput.numberoftetrahedra; ++i) {
     int v1 = tetgenOutput.tetrahedronlist[4 * i + 0];
     int v2 = tetgenOutput.tetrahedronlist[4 * i + 1];
     int v3 = tetgenOutput.tetrahedronlist[4 * i + 2];
     int v4 = tetgenOutput.tetrahedronlist[4 * i + 3];
 
-    this->_tetConstraints.push_back(createTetrahedralConstraint(
-        this->_constraintId++,
-        w,
-        this->_nodes[existingNodesCount + v1],
-        this->_nodes[existingNodesCount + v2],
-        this->_nodes[existingNodesCount + v3],
-        this->_nodes[existingNodesCount + v4]));
+    if (strainStiffness != 0.0f) {
+      this->_tetConstraints.push_back(createTetrahedralConstraint(
+          this->_constraintId++,
+          strainStiffness,
+          this->_nodes[existingNodesCount + v1],
+          this->_nodes[existingNodesCount + v2],
+          this->_nodes[existingNodesCount + v3],
+          this->_nodes[existingNodesCount + v4],
+          minStrain,
+          maxStrain));
+    }
+
+    if (volumeStiffness != 0.0f) {
+      this->_volumeConstraints.push_back(createVolumeConstraint(
+          this->_constraintId++,
+          volumeStiffness,
+          this->_nodes[existingNodesCount + v1],
+          this->_nodes[existingNodesCount + v2],
+          this->_nodes[existingNodesCount + v3],
+          this->_nodes[existingNodesCount + v4],
+          compression,
+          stretching));
+    }
   }
 
   this->_vertices.resize(this->_nodes.size());
@@ -209,7 +367,8 @@ void Solver::createTetBox(
 
         // if (hinged && i == 0) { //} && j == 0) {
         //   this->_positionConstraints.push_back(
-        //       createPositionConstraint(this->_constraintId++, node, stiffness));
+        //       createPositionConstraint(this->_constraintId++, node,
+        //       stiffness));
         // }
       }
     }
@@ -692,7 +851,7 @@ void Solver::createSheet(
     float scale,
     float mass,
     float w) {
-  Grid grid{16, 16, 1};
+  Grid grid{20, 20, 1};
 
   size_t currentNodeCount = this->_nodes.size();
   size_t currentDistConstraintsCount = this->_distanceConstraints.size();
@@ -855,7 +1014,7 @@ void Solver::createShapeMatchingBox(
         node.prevPosition = node.position;
         node.velocity = glm::vec3(0.0f);
         node.radius = 0.5f * scale;
-        node.invMass = 1.0f /10.0f;
+        node.invMass = 1.0f / 10.0f;
 
         // if (i == 0 && j == 0) {
         //   this->_positionConstraints.push_back(
@@ -864,7 +1023,7 @@ void Solver::createShapeMatchingBox(
       }
     }
   }
-  
+
   std::vector<uint32_t> nodeIndices(grid.width * grid.height * grid.depth);
   std::vector<glm::vec3> materialCoords(nodeIndices.size());
   for (uint32_t i = 0; i < nodeIndices.size(); ++i) {
@@ -873,7 +1032,8 @@ void Solver::createShapeMatchingBox(
     materialCoords[i] = this->_nodes[nodeId].position;
   }
 
-  this->_shapeConstraints.emplace_back(nodeIndices, materialCoords, w);
+  this->_shapeConstraints
+      .emplace_back(this->_nodes, nodeIndices, materialCoords, w);
 
   this->_vertices.resize(this->_nodes.size());
   for (size_t i = currentNodeCount; i < this->_nodes.size(); ++i) {
@@ -886,7 +1046,6 @@ void Solver::createShapeMatchingBox(
 
   this->renderStateDirty = true;
 }
-
 
 void Solver::createShapeMatchingSheet(
     const glm::vec3& translation,
@@ -949,10 +1108,8 @@ void Solver::createShapeMatchingSheet(
   this->_shapeConstraints.reserve(
       this->_shapeConstraints.size() + patchWidth * patchHeight);
   for (const ShapeMatchingPatch& patch : patches) {
-    this->_shapeConstraints.emplace_back(
-        patch.indices,
-        patch.materialCoords,
-        w);
+    this->_shapeConstraints
+        .emplace_back(this->_nodes, patch.indices, patch.materialCoords, w);
   }
 
   this->_vertices.resize(this->_nodes.size());
@@ -966,7 +1123,6 @@ void Solver::createShapeMatchingSheet(
 
   this->renderStateDirty = true;
 }
-
 
 void Solver::createBendSheet(
     const glm::vec3& translation,

@@ -6,6 +6,11 @@
 #include <optional>
 
 namespace {
+struct Interval {
+  float start = 0.0f;
+  float end = 1.0f;
+};
+
 struct CubicExpression {
   float cubicCoeff;
   float quadCoeff;
@@ -15,6 +20,124 @@ struct CubicExpression {
   float eval(float t) const {
     float t2 = t * t;
     return cubicCoeff * t2 * t + quadCoeff * t2 + linearCoeff * t + constCoeff;
+  }
+
+  std::optional<Interval> findEarliestIntervalOfRoot() const {
+    float f0 = this->eval(0.0f);
+    float f1 = this->eval(1.0f);
+
+    // Compute critical points (roots of derivative) in [0, 1]
+    // Use quadratic formula on the derivative
+    float a = 3 * cubicCoeff;
+    float b = 2 * quadCoeff;
+    float c = linearCoeff;
+
+    // Quadratic expression
+    float b2_4ac = b * b - 4.0f * a * c;
+    if (a < 0.00001f || b2_4ac < 0.0f) {
+      // No real critical points, the function is monotonically
+      // increasing or decreasing.
+
+      // Intermediate value theorem
+      return (f0 * f1 <= 0.0f) ? std::optional<Interval>({0.0f, 1.0f})
+                               : std::nullopt;
+    }
+
+    float sqrtb2_4ac = sqrt(b2_4ac);
+
+    float t0 = (-b - sqrtb2_4ac) / (2.0f * a);
+    float t1 = (-b + sqrtb2_4ac) / (2.0f * a);
+
+    if (t0 >= 1.0f) {
+      // The earliest critical point is after the interval
+      // So the interval is monotonic.
+
+      // Intermediate value theorem
+      return (f0 * f1 <= 0.0f) ? std::optional<Interval>({0.0f, 1.0f})
+                               : std::nullopt;
+
+    } else if (t0 <= 0.0f) {
+      // The first critical point is before the interval, so consider
+      // the second critical point.
+      if (t1 >= 1.0f) {
+        // Second critical point is after the interval, so the interval
+        // itself is monotonic.
+
+        return (f0 * f1 <= 0.0f) ? std::optional<Interval>({0.0f, 1.0f})
+                                 : std::nullopt;
+      } else {
+        // We have two intervals to check here, [0,t1] and [t1,1]
+        float ft1 = this->eval(t1);
+
+        if (f0 * ft1 <= 0.0f) {
+          return Interval{0.0f, t1};
+        } else {
+          return (ft1 * f1 <= 0.0f) ? std::optional<Interval>({t1, 1.0f})
+                                    : std::nullopt;
+        }
+      }
+    } else {
+      // The first critical point is in the interval
+      // First check [0,t0]
+      float ft0 = this->eval(t0);
+      if (f0 * ft0 <= 0.0f) {
+        return Interval{0, t0};
+      }
+
+      if (t1 >= 1.0f) {
+        // Second critical point is after the interval, so check [t0,1]
+        return (ft0 * f1 <= 0.0f) ? std::optional<Interval>({t0, 1.0f})
+                                  : std::nullopt;
+      } else {
+        // Second critical point is also within the interval, need to check
+        // [t0,t1] and [t1,1]
+        float ft1 = this->eval(t1);
+
+        if (ft0 * ft1 <= 0.0f) {
+          return Interval{t0, t1};
+        } else if (ft1 * f1 <= 0.0f) {
+          return Interval{t1, 1.0f};
+        } else {
+          return std::nullopt;
+        }
+      }
+    }
+  }
+
+  // Based on:
+  // High-Performance Polynomial Root Finding For Graphics, Cem Yuksel
+  std::optional<float> fastFindRootInInterval() const {
+    std::optional<Interval> interval = findEarliestIntervalOfRoot();
+    if (!interval) {
+      return std::nullopt;
+    }
+
+    float derivQuadCoeff = 3 * this->cubicCoeff;
+    float derivLinearCoeff = 2 * this->quadCoeff;
+    float derivConst = this->linearCoeff;
+
+    const uint32_t NEWTON_ITERS = 50;
+    const float EPS = 0.0001f;
+
+    // Initial guess half-way in the interval, hopefully sufficiently far away from
+    // critical points.
+    float t = interval->start;
+    for (uint32_t i = 0; i < NEWTON_ITERS; ++i) {
+      // Coefficients of derivative
+      float fpt =
+          derivQuadCoeff * t * t + derivLinearCoeff * t + derivConst;
+      float ft = this->eval(t);
+
+      // TODO: Handle fpt close to 0??
+      float tn = glm::clamp(t - ft / fpt, interval->start, interval->end);
+      if (glm::abs(tn - t) < EPS) {
+        return tn;
+      }
+
+      t = tn;
+    }
+
+    return t;
   }
 
   std::optional<float> findRootInInterval() const {
@@ -107,7 +230,8 @@ std::optional<float> pointTriangleCCD(
     const glm::vec3& ac0,
     const glm::vec3& ap1,
     const glm::vec3& ab1,
-    const glm::vec3& ac1) {
+    const glm::vec3& ac1,
+    float thresholdDistance) {
 
   // Early check to see if the point ever crosses the triangle plane
   // Assumes normal doesn't rotate significantly over the short interval.
@@ -121,8 +245,7 @@ std::optional<float> pointTriangleCCD(
     // to be colliding if it is within the thickness.
 
     // TODO: Should we consider points _behind_ the triangle??
-    float thickness = 0.1f;
-    if (nDotP1 >= 0.0f && nDotP1 < thickness) {
+    if (nDotP1 >= 0.0f && nDotP1 < thresholdDistance) {
       glm::vec3 barycentricCoords = glm::inverse(glm::mat3(ab1, ac1, n1)) * ap1;
 
       if ((0.0 > barycentricCoords.x) || (barycentricCoords.x > 1.0) ||
@@ -150,6 +273,7 @@ std::optional<float> pointTriangleCCD(
   expandTerm(ac0.x, ap0.y, ab0.z, acd.x, apd.y, abd.z, expression);
   expandTerm(-ac0.x, ab0.y, ap0.z, -acd.x, abd.y, apd.z, expression);
 
+  // std::optional<float> t = expression.fastFindRootInInterval();
   std::optional<float> t = expression.findRootInInterval();
 
   if (!t) {
@@ -280,7 +404,7 @@ std::optional<float> edgeEdgeCCD(
 
   // Check for 2D line intersection at time t
 
-  // abt * u = act + cdt * v 
+  // abt * u = act + cdt * v
   // abt * u - cdt * v = act
   // [abt, -cdt] [u,v]t = act
   glm::mat3 M(abt, -cdt, nt);

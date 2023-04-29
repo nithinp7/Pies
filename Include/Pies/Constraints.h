@@ -138,6 +138,10 @@ public:
   }
 
   void setWeight(float w) { this->_w = w; }
+
+  TProjection& getProjection() {
+    return this->_projection;
+  }
 };
 
 struct DistanceConstraintProjection {
@@ -154,6 +158,7 @@ createDistanceConstraint(uint32_t id, const Node& a, const Node& b, float w);
 
 struct PositionConstraintProjection {
   glm::vec3 fixedPosition;
+  glm::vec3 offset;
 
   void operator()(
       const std::vector<Node>& nodes,
@@ -167,6 +172,9 @@ struct TetrahedralConstraintProjection {
   glm::mat3 Q;
   glm::mat3 Qinv;
 
+  float minStrain;
+  float maxStrain;
+
   void operator()(
       const std::vector<Node>& nodes,
       const std::array<uint32_t, 4>& nodeIds,
@@ -179,10 +187,14 @@ TetrahedralConstraint createTetrahedralConstraint(
     const Node& a,
     const Node& b,
     const Node& c,
-    const Node& d);
+    const Node& d,
+    float minStrain = 0.8f,
+    float maxStrain = 1.0f);
 
 struct VolumeConstraintProjection {
-  float targetVolume;
+  glm::mat3 Qinv;
+  float minOmega;
+  float maxOmega;
 
   void operator()(
       const std::vector<Node>& nodes,
@@ -196,17 +208,9 @@ VolumeConstraint createVolumeConstraint(
     const Node& a,
     const Node& b,
     const Node& c,
-    const Node& d);
-// struct CollisionConstraintProjection {
-//   glm::vec3 intersection;
-//   glm::vec3 normal;
-
-//   void operator()(
-//       const std::array<Node*, 2>& nodes,
-//       std::array<glm::vec3, 2>& projected) const;
-// };
-// typedef Constraint<2, CollisionConstraintProjection> CollisionConstraint;
-// CollisionConstraint createCollisionConstraint(uint32_t id, Node* a, Node* b);
+    const Node& d,
+    float compression = 1.0f,
+    float stretching = 1.0f);
 
 struct BendConstraintProjection {
   float initialAngle;

@@ -12,8 +12,9 @@ std::optional<float> pointTriangleCCD(
     const glm::vec3& ac0,
     const glm::vec3& ap1,
     const glm::vec3& ab1,
-    const glm::vec3& ac1);
-    
+    const glm::vec3& ac1,
+    float thresholdDistance);
+
 std::optional<float> edgeEdgeCCD(
     const glm::vec3& ab0,
     const glm::vec3& ac0,

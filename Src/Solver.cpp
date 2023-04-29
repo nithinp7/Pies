@@ -197,6 +197,10 @@ void Solver::tickPD(float /*timestep*/) {
       constraint.setupGlobalStiffnessMatrix(this->_stiffnessMatrix);
     }
 
+    for (GoalMatchingConstraint& constraint : this->_goalConstraints) {
+      constraint.setupGlobalStiffnessMatrix(this->_stiffnessMatrix);
+    }
+
     for (BendConstraint& constraint : this->_bendConstraints) {
       constraint.setupGlobalStiffnessMatrix(this->_stiffnessMatrix);
     }
@@ -222,47 +226,14 @@ void Solver::tickPD(float /*timestep*/) {
       Node& node = this->_nodes[i];
       // Construct momentum estimate for qn+1
       node.position += h * node.velocity;
-    }
 
-    this->_parallelPointTriangleCollisions();
-#if 1
-    for (uint32_t collisionIter = 0;
-         collisionIter < this->_options.collisionIterations;
-         ++collisionIter) {
-      // this->_parallelComputeCollisions();
-      // this->_parallelPointTriangleCollisions();
-      for (CollisionConstraint& collision : this->_collisions) {
-        collision.projectToAuxiliaryVariable(this->_nodes);
-        Node& nodeA = this->_nodes[collision.nodeIds[0]];
-        Node& nodeB = this->_nodes[collision.nodeIds[1]];
-        nodeA.position += this->_options.collionStiffness *
-                          (collision.projectedPositions[0] - nodeA.position);
-        nodeB.position += this->_options.collionStiffness *
-                          (collision.projectedPositions[1] - nodeB.position);
-      }
-
-      for (PointTriangleCollisionConstraint& collision : this->_triCollisions) {
-        collision.stabilizeCollisions(this->_nodes);
-      }
-
-      for (EdgeCollisionConstraint& collision : this->_edgeCollisions) {
-        collision.stabilizeCollisions(this->_nodes);
-      }
-
-      for (StaticCollisionConstraint& collision : this->_staticCollisions) {
-        // TODO: stiffness
-        this->_nodes[collision.nodeId].position = collision.projectedPosition;
-      }
-    }
-#endif
-
-    for (uint32_t i = 0; i < nodeCount; ++i) {
-      const Node& node = this->_nodes[i];
       glm::vec3 Msn_h2 = node.position / node.invMass / h2;
       this->_Msn_h2.coeffRef(i, 0) = Msn_h2.x;
       this->_Msn_h2.coeffRef(i, 1) = Msn_h2.y;
       this->_Msn_h2.coeffRef(i, 2) = Msn_h2.z;
     }
+
+    this->_parallelPointTriangleCollisions();
 
     this->_collisionMatrix.setZero();
     this->_stiffnessAndCollisionMatrix.setZero();
@@ -316,6 +287,10 @@ void Solver::tickPD(float /*timestep*/) {
         constraint.projectToAuxiliaryVariable(this->_nodes);
       }
 
+      for (GoalMatchingConstraint& constraint : this->_goalConstraints) {
+        constraint.projectToAuxiliaryVariable(this->_nodes);
+      }
+
       for (PointTriangleCollisionConstraint& collision : this->_triCollisions) {
         collision.projectToAuxiliaryVariable(this->_nodes);
       }
@@ -325,9 +300,7 @@ void Solver::tickPD(float /*timestep*/) {
       }
 
       for (StaticCollisionConstraint& collision : this->_staticCollisions) {
-        const Node& node = this->_nodes[collision.nodeId];
-        collision.projectedPosition = node.position;
-        collision.projectedPosition.y = this->_options.floorHeight;
+        collision.projectToAuxiliaryVariable(this->_nodes);
       }
 
       for (PositionConstraint& constraint : this->_positionConstraints) {
@@ -350,6 +323,10 @@ void Solver::tickPD(float /*timestep*/) {
       }
 
       for (ShapeMatchingConstraint& constraint : this->_shapeConstraints) {
+        constraint.setupGlobalForceVector(this->_forceVector);
+      }
+
+      for (GoalMatchingConstraint& constraint : this->_goalConstraints) {
         constraint.setupGlobalForceVector(this->_forceVector);
       }
 
@@ -492,8 +469,7 @@ void Solver::tickPD(float /*timestep*/) {
     for (const StaticCollisionConstraint& collision : this->_staticCollisions) {
       Node& node = this->_nodes[collision.nodeId];
 
-      glm::vec3 perpVel =
-          node.velocity - glm::dot(node.velocity, collision.n) * collision.n;
+      glm::vec3 perpVel = glm::vec3(node.velocity.x, 0.0f, node.velocity.z);
 
       float friction = this->_options.friction;
       if (glm::length(perpVel) < this->_options.staticFrictionThreshold) {
@@ -513,6 +489,7 @@ void Solver::clear() {
   this->_tetConstraints.clear();
   this->_volumeConstraints.clear();
   this->_shapeConstraints.clear();
+  this->_goalConstraints.clear();
   this->_bendConstraints.clear();
   this->_tets.clear();
   this->_positionConstraints.clear();
@@ -523,46 +500,6 @@ void Solver::clear() {
   this->_stiffnessMatrix = {};
 
   this->renderStateDirty = true;
-}
-
-void Solver::_computeCollisions() {
-  // Update collisions
-  this->_collisions.clear();
-  this->_triCollisions.clear();
-  this->_edgeCollisions.clear();
-  this->_staticCollisions.clear();
-  this->_collisionMatrix.setZero();
-  this->_stiffnessAndCollisionMatrix.setZero();
-
-  this->_spatialHashNodes.clear();
-  this->_spatialHashNodes.parallelBulkInsert(this->_nodes, {});
-
-  // Detect and resolve collisions
-  // TODO: Parallelize this!!
-  std::vector<const SpatialHashGridCellBucket<Node>*> scratchBuckets;
-  for (Node& node : this->_nodes) {
-    this->_spatialHashNodes.findCollisions(node, {}, scratchBuckets);
-    for (const SpatialHashGridCellBucket<Node>* pBucket : scratchBuckets) {
-      // Check each node within each bucket
-      for (Node* pOtherNode : pBucket->values) {
-        if (node.id <= pOtherNode->id) {
-          // Only fill lower-triangular matrix
-          continue;
-        }
-
-        this->_collisions.emplace_back(node, *pOtherNode);
-      }
-    }
-
-    if (node.position.y - node.radius < this->_options.floorHeight) {
-      this->_staticCollisions.emplace_back(
-          node,
-          glm::vec3(
-              node.position.x,
-              this->_options.floorHeight + node.radius,
-              node.position.z));
-    }
-  }
 }
 
 void Solver::_parallelComputeCollisions() {
@@ -609,12 +546,7 @@ void Solver::_parallelComputeCollisions() {
       }
 
       if (node.position.y - node.radius < floorHeight) {
-        data.staticCollisions.emplace_back(
-            node,
-            glm::vec3(
-                node.position.x,
-                floorHeight + node.radius,
-                node.position.z));
+        data.staticCollisions.emplace_back(node);
       }
     }
   };
@@ -757,130 +689,134 @@ void Solver::_parallelPointTriangleCollisions() {
   this->_spatialHashTris.parallelBulkInsert(this->_triangles, {this->_nodes});
 
   // Detect and resolve collisions
-  auto fnComputeCollisions = [&nodes = this->_nodes,
-                              &triangles = this->_triangles,
-                              threadCount = this->_options.threadCount,
-                              &spatialHash = this->_spatialHashTris,
-                              &threadData = this->_threadData,
-                              floorHeight =
-                                  this->_options.floorHeight](size_t threadId) {
-    ThreadData& data = threadData[threadId];
+  auto fnComputeCollisions =
+      [&nodes = this->_nodes,
+       &triangles = this->_triangles,
+       threadCount = this->_options.threadCount,
+       &spatialHash = this->_spatialHashTris,
+       &threadData = this->_threadData,
+       threshold = this->_options.collisionThresholdDistance,
+       thickness = this->_options.collisionThickness,
+       floorHeight = this->_options.floorHeight](size_t threadId) {
+        ThreadData& data = threadData[threadId];
 
-    std::vector<const SpatialHashGridCellBucket<Triangle>*> buckets;
+        std::vector<const SpatialHashGridCellBucket<Triangle>*> buckets;
 
-    data.collisions.clear();
-    data.triCollisions.clear();
-    data.edgeCollisions.clear();
-    data.staticCollisions.clear();
+        data.collisions.clear();
+        data.triCollisions.clear();
+        data.edgeCollisions.clear();
+        data.staticCollisions.clear();
 
-    for (size_t triId = threadId; triId < triangles.size();
-         triId += threadCount) {
-      const Triangle& tri = triangles[triId];
+        for (size_t triId = threadId; triId < triangles.size();
+             triId += threadCount) {
+          const Triangle& tri = triangles[triId];
 
-      SpatialHashGridCellRange range =
-          sweptTriRange(tri, nodes, spatialHash.getGrid());
-      //     ccdRange(nodeA.prevPosition, nodeA.position,
-      //     spatialHash.getGrid());
+          SpatialHashGridCellRange range =
+              sweptTriRange(tri, nodes, spatialHash.getGrid());
+          //     ccdRange(nodeA.prevPosition, nodeA.position,
+          //     spatialHash.getGrid());
 
-      for (uint32_t dx = 0; dx < range.lengthX; ++dx) {
-        for (uint32_t dy = 0; dy < range.lengthY; ++dy) {
-          for (uint32_t dz = 0; dz < range.lengthZ; ++dz) {
-            // Compute grid cell id
-            SpatialHashGridCellId id{
-                range.minX + dx,
-                range.minY + dy,
-                range.minZ + dz};
+          for (uint32_t dx = 0; dx < range.lengthX; ++dx) {
+            for (uint32_t dy = 0; dy < range.lengthY; ++dy) {
+              for (uint32_t dz = 0; dz < range.lengthZ; ++dz) {
+                // Compute grid cell id
+                SpatialHashGridCellId id{
+                    range.minX + dx,
+                    range.minY + dy,
+                    range.minZ + dz};
 
-            const SpatialHashGridCellBucket<Triangle>* pBucket =
-                spatialHash.findCollisions(id);
-            if (pBucket) {
-              buckets.push_back(pBucket);
-            }
-          }
-        }
-      }
-
-      for (const SpatialHashGridCellBucket<Triangle>* pBucket : buckets) {
-        // Check all triangles in the bucket
-        for (const Triangle* pOtherTri : pBucket->values) {
-          bool containsCommonNode = false;
-          // TODO: Is there any case where we want to collide between two
-          // connected triangles??
-          for (uint32_t i = 0; i < 3; ++i) {
-            for (uint32_t j = 0; j < 3; ++j) {
-              if (tri.nodeIds[i] == pOtherTri->nodeIds[j]) {
-                containsCommonNode = true;
+                const SpatialHashGridCellBucket<Triangle>* pBucket =
+                    spatialHash.findCollisions(id);
+                if (pBucket) {
+                  buckets.push_back(pBucket);
+                }
               }
             }
           }
 
-          if (containsCommonNode) {
-            continue;
-          }
+          for (const SpatialHashGridCellBucket<Triangle>* pBucket : buckets) {
+            // Check all triangles in the bucket
+            for (const Triangle* pOtherTri : pBucket->values) {
+              bool containsCommonNode = false;
+              // TODO: Is there any case where we want to collide between two
+              // connected triangles??
+              for (uint32_t i = 0; i < 3; ++i) {
+                for (uint32_t j = 0; j < 3; ++j) {
+                  if (tri.nodeIds[i] == pOtherTri->nodeIds[j]) {
+                    containsCommonNode = true;
+                  }
+                }
+              }
 
-          const Node& nodeB = nodes[pOtherTri->nodeIds[0]];
-          const Node& nodeC = nodes[pOtherTri->nodeIds[1]];
-          const Node& nodeD = nodes[pOtherTri->nodeIds[2]];
+              if (containsCommonNode) {
+                continue;
+              }
 
-          // Point-triangle collisions
-          for (uint32_t i = 0; i < 3; ++i) {
-            const Node& nodeA = nodes[tri.nodeIds[i]];
+              const Node& nodeB = nodes[pOtherTri->nodeIds[0]];
+              const Node& nodeC = nodes[pOtherTri->nodeIds[1]];
+              const Node& nodeD = nodes[pOtherTri->nodeIds[2]];
 
-            std::optional<float> optT = CollisionDetection::pointTriangleCCD(
-                nodeA.prevPosition - nodeB.prevPosition,
-                nodeC.prevPosition - nodeB.prevPosition,
-                nodeD.prevPosition - nodeB.prevPosition,
-                nodeA.position - nodeB.position,
-                nodeC.position - nodeB.position,
-                nodeD.position - nodeB.position);
+              // Point-triangle collisions
+              for (uint32_t i = 0; i < 3; ++i) {
+                const Node& nodeA = nodes[tri.nodeIds[i]];
 
-            if (!optT) {
-              // CCD did not find intersection
-              continue;
+                std::optional<float> optT =
+                    CollisionDetection::pointTriangleCCD(
+                        nodeA.prevPosition - nodeB.prevPosition,
+                        nodeC.prevPosition - nodeB.prevPosition,
+                        nodeD.prevPosition - nodeB.prevPosition,
+                        nodeA.position - nodeB.position,
+                        nodeC.position - nodeB.position,
+                        nodeD.position - nodeB.position,
+                        threshold);
+
+                if (!optT) {
+                  // CCD did not find intersection
+                  continue;
+                }
+
+                data.triCollisions
+                    .emplace_back(nodeA, nodeB, nodeC, nodeD, thickness);
+              }
+
+              // for (uint32_t i = 0; i < 3; ++i) {
+              //   for (uint32_t j = 0; j < 3; ++j) {
+              //     const Node& a = nodes[tri.nodeIds[i]];
+              //     const Node& b = nodes[tri.nodeIds[(i + 1) % 3]];
+
+              //     const Node& c = nodes[pOtherTri->nodeIds[j]];
+              //     const Node& d = nodes[pOtherTri->nodeIds[(j + 1) % 3]];
+
+              //     std::optional<float> optT =
+              //     CollisionDetection::edgeEdgeCCD(
+              //         b.prevPosition - a.prevPosition,
+              //         c.prevPosition - a.prevPosition,
+              //         d.prevPosition - a.prevPosition,
+              //         b.position - a.position,
+              //         c.position - a.position,
+              //         d.position - a.position);
+
+              //     if (!optT) {
+              //       // CCD did not find intersection
+              //       continue;
+              //     }
+
+              //     data.edgeCollisions.emplace_back(a, b, c, d);
+              //   }
+              // }
             }
-
-            data.triCollisions.emplace_back(nodeA, nodeB, nodeC, nodeD);
           }
 
-          // for (uint32_t i = 0; i < 3; ++i) {
-          //   for (uint32_t j = 0; j < 3; ++j) {
-          //     const Node& a = nodes[tri.nodeIds[i]];
-          //     const Node& b = nodes[tri.nodeIds[(i + 1) % 3]];
+          buckets.clear();
 
-          //     const Node& c = nodes[pOtherTri->nodeIds[j]];
-          //     const Node& d = nodes[pOtherTri->nodeIds[(j + 1) % 3]];
-              
-          //     std::optional<float> optT = CollisionDetection::edgeEdgeCCD(
-          //         b.prevPosition - a.prevPosition,
-          //         c.prevPosition - a.prevPosition,
-          //         d.prevPosition - a.prevPosition,
-          //         b.position - a.position,
-          //         c.position - a.position,
-          //         d.position - a.position);
-
-          //     if (!optT) {
-          //       // CCD did not find intersection
-          //       continue;
-          //     }
-
-          //     data.edgeCollisions.emplace_back(a, b, c, d);
-          //   }
-          // }
+          for (uint32_t i = 0; i < 3; ++i) {
+            const Node& node = nodes[tri.nodeIds[i]];
+            if (node.position.y < floorHeight + thickness) {
+              data.staticCollisions.emplace_back(node);
+            }
+          }
         }
-      }
-
-      buckets.clear();
-
-      for (uint32_t i = 0; i < 3; ++i) {
-        const Node& node = nodes[tri.nodeIds[i]];
-        if (node.position.y < floorHeight) {
-          data.staticCollisions.emplace_back(
-              node,
-              glm::vec3(node.position.x, floorHeight, node.position.z));
-        }
-      }
-    }
-  };
+      };
 
   std::vector<std::thread> threads;
   for (uint32_t threadId = 0; threadId < this->_options.threadCount;

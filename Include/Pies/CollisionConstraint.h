@@ -42,7 +42,8 @@ struct PointTriangleCollisionConstraint {
       const Node& a,
       const Node& b,
       const Node& c,
-      const Node& d);
+      const Node& d,
+      float thickness_);
 
   void projectToAuxiliaryVariable(const std::vector<Node>& nodes);
   void stabilizeCollisions(std::vector<Node>& nodes);
@@ -72,19 +73,16 @@ struct EdgeCollisionConstraint {
   void setupGlobalForceVector(Eigen::MatrixXf& forceVector) const;
 };
 
+// TODO: Rename to floor collision...
 struct StaticCollisionConstraint {
   float w = 10000.0f;
   uint32_t nodeId;
   glm::vec3 projectedPosition;
 
-  glm::vec3 n;
-
-  StaticCollisionConstraint(
-      const Node& node,
-      const glm::vec3& projectedPosition);
+  StaticCollisionConstraint(const Node& node);
 
   void setupCollisionMatrix(Eigen::SparseMatrix<float>& systemMatrix) const;
-
+  void projectToAuxiliaryVariable(const std::vector<Node>& nodes);
   void setupGlobalForceVector(Eigen::MatrixXf& forceVector) const;
 };
 } // namespace Pies
