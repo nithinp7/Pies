@@ -138,6 +138,10 @@ public:
   }
 
   void setWeight(float w) { this->_w = w; }
+
+  TProjection& getProjection() {
+    return this->_projection;
+  }
 };
 
 struct DistanceConstraintProjection {
@@ -154,6 +158,7 @@ createDistanceConstraint(uint32_t id, const Node& a, const Node& b, float w);
 
 struct PositionConstraintProjection {
   glm::vec3 fixedPosition;
+  glm::vec3 offset;
 
   void operator()(
       const std::vector<Node>& nodes,

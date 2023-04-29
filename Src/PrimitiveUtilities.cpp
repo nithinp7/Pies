@@ -83,24 +83,47 @@ void Solver::addFixedRegions(
   // This is not particularly efficient, but it should only need to be done once
   // during setup
   // TODO: Could speed up with spatial hash if this is super slow
-  std::vector<glm::mat4> worldToRegionMatrices;
-  worldToRegionMatrices.reserve(regionMatrices.size());
-  for (const glm::mat4& region : regionMatrices) {
-    worldToRegionMatrices.push_back(glm::inverse(region));
-  }
+  size_t currentGoalConstraintCount = this->_goalConstraints.size();
+  this->_goalConstraints.reserve(
+      currentGoalConstraintCount + regionMatrices.size());
 
-  for (const Node& node : this->_nodes) {
-    glm::vec4 pos = glm::vec4(node.position, 1.0f);
+  size_t currentFixedRegionsCount = this->_fixedRegions.size();
+  this->_fixedRegions.reserve(currentFixedRegionsCount + regionMatrices.size());
+  for (const glm::mat4& regionToWorld : regionMatrices) {
+    FixedRegion region;
+    region.initialTransform = regionToWorld;
+    region.invInitialTransform = glm::inverse(regionToWorld);
+    region.goalMatchingConstraint = this->_goalConstraints.size();
 
-    for (const glm::mat4& worldToRegion : worldToRegionMatrices) {
-      glm::vec4 local = worldToRegion * pos;
+    std::vector<uint32_t> constrainedNodes;
+
+    for (const Node& node : this->_nodes) {
+      glm::vec4 pos = glm::vec4(node.position, 1.0f);
+      glm::vec4 local = region.invInitialTransform * pos;
       if (-1.0f <= local.x && local.x <= 1.0f && -1.0f <= local.y &&
           local.y <= 1.0f && -1.0f <= local.z && local.z <= 1.0f) {
-        this->_positionConstraints.push_back(
-            createPositionConstraint(this->_constraintId++, node, w));
-        break;
+        constrainedNodes.push_back(node.id);
       }
     }
+
+    this->_goalConstraints.emplace_back(this->_nodes, constrainedNodes, w);
+    this->_fixedRegions.push_back(region);
+  }
+}
+
+void Solver::updateFixedRegions(const std::vector<glm::mat4>& regionMatrices) {
+  if (regionMatrices.size() != this->_fixedRegions.size()) {
+    assert(false);
+    return;
+  }
+
+  for (uint32_t i = 0; i < this->_fixedRegions.size(); ++i) {
+    const glm::mat4& currentRegionTransform = regionMatrices[i];
+    const FixedRegion& region = this->_fixedRegions[i];
+    // transform = regionToCurrentWorld * initialWorldToRegion
+    glm::mat4 transform = currentRegionTransform * region.invInitialTransform;
+    this->_goalConstraints[region.goalMatchingConstraint].setTransform(
+        transform);
   }
 }
 
@@ -1009,8 +1032,8 @@ void Solver::createShapeMatchingBox(
     materialCoords[i] = this->_nodes[nodeId].position;
   }
 
-  this->_shapeConstraints.emplace_back(
-        this->_nodes, nodeIndices, materialCoords, w);
+  this->_shapeConstraints
+      .emplace_back(this->_nodes, nodeIndices, materialCoords, w);
 
   this->_vertices.resize(this->_nodes.size());
   for (size_t i = currentNodeCount; i < this->_nodes.size(); ++i) {

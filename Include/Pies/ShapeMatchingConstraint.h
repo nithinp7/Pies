@@ -36,4 +36,26 @@ private:
   
   float _w;
 };
+
+class GoalMatchingConstraint {
+public:
+  GoalMatchingConstraint(
+      const std::vector<Node>& nodes,
+      const std::vector<uint32_t>& indices,
+      float w);
+
+  void
+  setupGlobalStiffnessMatrix(Eigen::SparseMatrix<float>& systemMatrix) const;
+  void setupGlobalForceVector(Eigen::MatrixXf& forceVector) const;
+  void projectToAuxiliaryVariable(const std::vector<Node>& nodes);
+  void setTransform(const glm::mat4& transform);
+
+private:
+  std::vector<uint32_t> _nodeIndices;
+  std::vector<glm::vec3> _materialCoords;
+  Eigen::MatrixXd _projectedPositions;
+  glm::mat4 _currentTransform;
+  
+  float _w;
+};
 } // namespace Pies

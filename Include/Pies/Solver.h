@@ -86,6 +86,7 @@ public:
       float compression,
       float stretching);
   void addFixedRegions(const std::vector<glm::mat4>& regionMatrices, float w);
+  void updateFixedRegions(const std::vector<glm::mat4>& regionMatrices);
   void addLinkedRegions(const std::vector<glm::mat4>& regionsMatrices, float w);
 
   // Utilities for spawning primitives
@@ -144,13 +145,21 @@ private:
   SpatialHash<Triangle, TriCompRange> _spatialHashTris;
   SpatialHash<Tetrahedron, TetCompRange> _spatialHashTets;
 
+  struct FixedRegion {
+    glm::mat4 initialTransform{};
+    glm::mat4 invInitialTransform{};
+    uint32_t goalMatchingConstraint{};
+  };
+
   std::vector<Node> _nodes;
   std::vector<Tetrahedron> _tets;
+  std::vector<FixedRegion> _fixedRegions;
   std::vector<PositionConstraint> _positionConstraints;
   std::vector<DistanceConstraint> _distanceConstraints;
   std::vector<TetrahedralConstraint> _tetConstraints;
   std::vector<VolumeConstraint> _volumeConstraints;
   std::vector<ShapeMatchingConstraint> _shapeConstraints;
+  std::vector<GoalMatchingConstraint> _goalConstraints;
   std::vector<BendConstraint> _bendConstraints;
 
   uint32_t _previousNodeCount = 0;

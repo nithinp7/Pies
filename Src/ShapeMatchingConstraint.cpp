@@ -121,4 +121,59 @@ void ShapeMatchingConstraint::projectToAuxiliaryVariable(
   this->_projectedPositions.noalias() =
       (R * this->_materialCoords).colwise() + T;
 }
+
+GoalMatchingConstraint::GoalMatchingConstraint(
+    const std::vector<Node>& nodes,
+    const std::vector<uint32_t>& indices,
+    float w)
+    : _nodeIndices(indices),
+      _projectedPositions(3, indices.size()),
+      _currentTransform(1.0f),
+      _w(w) {
+    this->_materialCoords.resize(indices.size());
+    for (size_t i = 0; i < indices.size(); ++i) {
+      const Node& node = nodes[indices[i]];
+      this->_materialCoords[i] = node.position;
+    }
+  }
+
+void GoalMatchingConstraint::setupGlobalStiffnessMatrix(
+    Eigen::SparseMatrix<float>& systemMatrix) const {
+  // Assumes A and B are Identity.
+  for (uint32_t nodeId : this->_nodeIndices) {
+    systemMatrix.coeffRef(nodeId, nodeId) += this->_w;
+  }
+}
+
+void GoalMatchingConstraint::setupGlobalForceVector(
+    Eigen::MatrixXf& forceVector) const {
+  // Assumes A and B are Identity.
+  for (uint32_t i = 0; i < this->_nodeIndices.size(); ++i) {
+    uint32_t nodeId = this->_nodeIndices[i];
+
+    forceVector.coeffRef(nodeId, 0) +=
+        this->_w * this->_projectedPositions.coeff(0, i);
+    forceVector.coeffRef(nodeId, 1) +=
+        this->_w * this->_projectedPositions.coeff(1, i);
+    forceVector.coeffRef(nodeId, 2) +=
+        this->_w * this->_projectedPositions.coeff(2, i);
+  }
+}
+
+void GoalMatchingConstraint::projectToAuxiliaryVariable(
+    const std::vector<Node>& nodes) {
+  
+  for (uint32_t i = 0; i < this->_materialCoords.size(); ++i) {
+    glm::vec4 matCoord(this->_materialCoords[i], 1.0f);
+    glm::vec4 projected = this->_currentTransform * matCoord;
+
+    this->_projectedPositions.coeffRef(0, i) = projected.x;
+    this->_projectedPositions.coeffRef(1, i) = projected.y;
+    this->_projectedPositions.coeffRef(2, i) = projected.z;
+  }
+}
+
+void GoalMatchingConstraint::setTransform(const glm::mat4& transform) {
+  this->_currentTransform = transform;
+}
 } // namespace Pies

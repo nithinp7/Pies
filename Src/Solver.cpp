@@ -197,6 +197,10 @@ void Solver::tickPD(float /*timestep*/) {
       constraint.setupGlobalStiffnessMatrix(this->_stiffnessMatrix);
     }
 
+    for (GoalMatchingConstraint& constraint : this->_goalConstraints) {
+      constraint.setupGlobalStiffnessMatrix(this->_stiffnessMatrix);
+    }
+
     for (BendConstraint& constraint : this->_bendConstraints) {
       constraint.setupGlobalStiffnessMatrix(this->_stiffnessMatrix);
     }
@@ -283,6 +287,10 @@ void Solver::tickPD(float /*timestep*/) {
         constraint.projectToAuxiliaryVariable(this->_nodes);
       }
 
+      for (GoalMatchingConstraint& constraint : this->_goalConstraints) {
+        constraint.projectToAuxiliaryVariable(this->_nodes);
+      }
+
       for (PointTriangleCollisionConstraint& collision : this->_triCollisions) {
         collision.projectToAuxiliaryVariable(this->_nodes);
       }
@@ -315,6 +323,10 @@ void Solver::tickPD(float /*timestep*/) {
       }
 
       for (ShapeMatchingConstraint& constraint : this->_shapeConstraints) {
+        constraint.setupGlobalForceVector(this->_forceVector);
+      }
+
+      for (GoalMatchingConstraint& constraint : this->_goalConstraints) {
         constraint.setupGlobalForceVector(this->_forceVector);
       }
 
@@ -477,6 +489,7 @@ void Solver::clear() {
   this->_tetConstraints.clear();
   this->_volumeConstraints.clear();
   this->_shapeConstraints.clear();
+  this->_goalConstraints.clear();
   this->_bendConstraints.clear();
   this->_tets.clear();
   this->_positionConstraints.clear();

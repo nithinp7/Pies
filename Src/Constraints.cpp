@@ -69,7 +69,7 @@ createPositionConstraint(uint32_t id, const Node& node, float w) {
       w,
       Eigen::Matrix<float, 1, 1>::Identity(),
       Eigen::Matrix<float, 1, 1>::Identity(),
-      {node.position},
+      {node.position, glm::vec3(0.0f)},
       {node.id});
 }
 
