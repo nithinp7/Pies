@@ -30,23 +30,21 @@ Pies has been integrated successfully in two places so far, check out the linked
 
 ## Pies for Maya
 
-<img src="https://github.com/nithinp7/Pies/blob/main/Media/PiesMaya2.gif">
+- [Pies for Maya Repository](https://github.com/nithinp7/PiesForMaya)
+
+<img src="https://github.com/nithinp7/Pies/blob/main/Media/PiesMaya2.gif" width=800>
 
 ## Pies for Althea
 
+- [Pies for Althea Repository](https://github.com/nithinp7/PiesForAlthea)
 
-## Original Prototype
+<img src="https://github.com/nithinp7/Pies/blob/main/Media/PiesAlthea1.gif" width=800>
+
+<img src="https://github.com/nithinp7/Pies/blob/main/Media/PiesAlthea2.png" width=800>
+
+## Original Prototype (Old)
 ### Projective Dynamics
-YouTube links:
-- [Projective Dynamics video 1](https://youtu.be/3i7e_A1Btxo)
-- [Projective Dynamics video 2](https://youtu.be/SwnAaLc8OYM)
 <img src="https://github.com/nithinp7/Pies/blob/main/Media/PD.gif" width=800>
 
 ### Position-Based Dynamics
-YouTube link:
-- [Position Based Dynamics video](https://youtu.be/IaQ6OIHqq7Y)
 <img src="https://github.com/nithinp7/Pies/blob/main/Media/PBDCollisions.gif" width=800>
-
-## Screenshots
-<img src="https://github.com/nithinp7/Pies/blob/main/Media/PBDScene.png" width=600>
-<img src="https://github.com/nithinp7/Pies/blob/main/Media/Reflections.png" width=600>
