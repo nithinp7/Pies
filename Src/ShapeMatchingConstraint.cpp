@@ -113,7 +113,6 @@ void ShapeMatchingConstraint::projectToAuxiliaryVariable(
   // Deformation gradient
   Eigen::Matrix3d F = P * this->_Qinv;
 
-  // Want to extract rotation from
   extractRotation(F, this->_currentRotation, 100);
   Eigen::Matrix3d R = this->_currentRotation.toRotationMatrix();
   Eigen::Vector3d T(centerOfMass.x, centerOfMass.y, centerOfMass.z);
