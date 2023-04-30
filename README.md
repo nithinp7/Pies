@@ -2,6 +2,8 @@
 
 Pies is a constraint- and particle-based, soft-body physics engine based on the paper _"Projective Dynamics: Fusing Constraint Projections for Fast Simulation", Bouaziz et. al 2014_. 
 
+<img src="https://github.com/nithinp7/Pies/blob/main/Media/PiesMaya4.gif">
+
 <img src="https://github.com/nithinp7/Pies/blob/main/Media/PiesMaya1.gif">
 
 ## Current Features
