@@ -23,6 +23,10 @@ Solver::~Solver() {
 }
 
 void Solver::tick(float timestep) {
+  if (this->_simFailed) {
+    return;
+  }
+
   switch (this->_options.solver) {
   case SolverName::PBD:
     this->tickPBD(timestep);
@@ -734,9 +738,22 @@ void Solver::_parallelPointTriangleCollisions() {
             }
           }
 
+          if (buckets.size() > 1000) {
+            // Safety check to avoid simulation hangs
+            data.failed = true;
+            return;
+          }
+
           for (const SpatialHashGridCellBucket<Triangle>* pBucket : buckets) {
             // Check all triangles in the bucket
             for (const Triangle* pOtherTri : pBucket->values) {
+
+              if (pBucket->values.size() > 1000) {
+                // Safety check to avoid simulation hangs
+                data.failed = true;
+                return;
+              }
+
               bool containsCommonNode = false;
               // TODO: Is there any case where we want to collide between two
               // connected triangles??
@@ -833,6 +850,11 @@ void Solver::_parallelPointTriangleCollisions() {
 
   // Aggregate across per-thread results
   for (const ThreadData& data : this->_threadData) {
+    if (data.failed) {
+      this->_simFailed = true;
+      return;
+    }
+    
     for (const PointTriangleCollisionConstraint& collision :
          data.triCollisions) {
       // collision.setupGlobalForceVector(this->_forceVector);

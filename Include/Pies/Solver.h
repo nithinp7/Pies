@@ -177,6 +177,8 @@ private:
     std::vector<PointTriangleCollisionConstraint> triCollisions;
     std::vector<EdgeCollisionConstraint> edgeCollisions;
     std::vector<StaticCollisionConstraint> staticCollisions;
+
+    bool failed = false;
   };
 
   std::vector<ThreadData> _threadData;
@@ -192,5 +194,7 @@ private:
   std::vector<Triangle> _triangles;
   std::vector<uint32_t> _lines;
   std::vector<Vertex> _vertices;
+
+  bool _simFailed = false;
 };
 } // namespace Pies
