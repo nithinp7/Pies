@@ -6,7 +6,6 @@
 #include <cstdlib>
 #include <unordered_map>
 
-namespace Pies {
 namespace {
 float randf() { return static_cast<float>(double(std::rand()) / RAND_MAX); }
 
@@ -49,6 +48,21 @@ struct Edge {
 };
 } // namespace
 
+namespace std {
+  template <> struct hash<Edge> { 
+    std::size_t operator()(const Edge& k) const {
+
+      std::hash<uint32_t> h;
+      // Compute individual hash values for first,
+      // second and third and combine them using XOR
+      // and bit shifting:
+
+      return (h(k.vertexId1) << 1) ^ h(k.vertexId2);     
+    }
+  };
+} // namespace std
+
+namespace Pies {
 void Solver::addNodes(const std::vector<glm::vec3>& vertices) {
 
   // TODO: parameterize more of these
