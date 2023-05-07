@@ -408,7 +408,7 @@ std::optional<float> edgeEdgeCCD(
   // abt * u - cdt * v = act
   // [abt, -cdt] [u,v]t = act
   glm::mat3 M(abt, -cdt, nt);
-  glm::vec2 uv = glm::inverse(M) * act;
+  glm::vec2 uv(glm::inverse(M) * act);
 
   if (uv.x < 0.0f || uv.x > 1.0f || uv.y < 0.0f || uv.y > 1.0f) {
     return std::nullopt;

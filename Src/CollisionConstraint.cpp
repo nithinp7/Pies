@@ -173,6 +173,20 @@ void PointTriangleCollisionConstraint::setupCollisionMatrix(
   }
 }
 
+void PointTriangleCollisionConstraint::setupTriplets(
+    std::vector<Eigen::Triplet<float>>& triplets) const {
+  for (uint32_t i = 0; i < 4; ++i) {
+    uint32_t nodeId_i = this->nodeIds[i];
+    for (uint32_t j = 0; j < 4; ++j) {
+      uint32_t nodeId_j = this->nodeIds[j];
+      triplets.emplace_back(
+          nodeId_i,
+          nodeId_j,
+          this->w * this->AtA.coeff(i, j));
+    }
+  }
+}
+
 void PointTriangleCollisionConstraint::setupGlobalForceVector(
     Eigen::MatrixXf& forceVector) const {
   // Set up projected nodes as eigen matrix
@@ -442,6 +456,11 @@ StaticCollisionConstraint::StaticCollisionConstraint(const Node& node)
 void StaticCollisionConstraint::setupCollisionMatrix(
     Eigen::SparseMatrix<float>& systemMatrix) const {
   systemMatrix.coeffRef(nodeId, nodeId) += this->w;
+}
+
+void StaticCollisionConstraint::setupTriplets(
+    std::vector<Eigen::Triplet<float>>& triplets) const {
+  triplets.emplace_back(nodeId, nodeId, this->w);
 }
 
 void StaticCollisionConstraint::projectToAuxiliaryVariable(

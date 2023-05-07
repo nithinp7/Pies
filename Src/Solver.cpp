@@ -239,21 +239,31 @@ void Solver::tickPD(float /*timestep*/) {
 
     this->_parallelPointTriangleCollisions();
 
-    this->_collisionMatrix.setZero();
+    // this->_collisionMatrix.setZero();
     this->_stiffnessAndCollisionMatrix.setZero();
+
+    // TODO: Change this to be a member variable
+    static std::vector<Eigen::Triplet<float>> collisionTriplets;
+    collisionTriplets.clear();
 
     for (const PointTriangleCollisionConstraint& collision :
          this->_triCollisions) {
-      collision.setupCollisionMatrix(this->_collisionMatrix);
+      collision.setupTriplets(collisionTriplets);
+      // collision.setupCollisionMatrix(this->_collisionMatrix);
     }
 
-    for (const EdgeCollisionConstraint& collision : this->_edgeCollisions) {
-      collision.setupCollisionMatrix(this->_collisionMatrix);
-    }
+    // for (const EdgeCollisionConstraint& collision : this->_edgeCollisions) {
+    //   collision.setupCollisionMatrix(this->_collisionMatrix);
+    // }
 
     for (const StaticCollisionConstraint& collision : this->_staticCollisions) {
-      collision.setupCollisionMatrix(this->_collisionMatrix);
+      collision.setupTriplets(collisionTriplets);
+      // collision.setupCollisionMatrix(this->_collisionMatrix);
     }
+
+    this->_collisionMatrix.setFromTriplets(
+        collisionTriplets.begin(),
+        collisionTriplets.end());
 
     this->_stiffnessAndCollisionMatrix =
         this->_stiffnessMatrix + this->_collisionMatrix;
@@ -267,6 +277,34 @@ void Solver::tickPD(float /*timestep*/) {
 
       // Project all constraints onto auxiliary variable (local step)
       // TODO: Parallelize this step
+      // TODO: Clean this up
+
+      auto fnProjectTets = [threadCount = this->_options.threadCount,
+                            &volConstraints = this->_volumeConstraints,
+                            &tetConstraints = this->_tetConstraints,
+                            &nodes = this->_nodes](size_t threadId) {
+        for (size_t i = threadId; i < volConstraints.size(); i += threadCount) {
+          volConstraints[i].projectToAuxiliaryVariable(nodes);
+        }
+
+        for (size_t i = threadId; i < tetConstraints.size(); i += threadCount) {
+          tetConstraints[i].projectToAuxiliaryVariable(nodes);
+        }
+      };
+
+      std::vector<std::thread> threads;
+      for (size_t i = 0; i < this->_options.threadCount; ++i) {
+        threads.emplace_back(fnProjectTets, i);
+      }
+
+      // for (TetrahedralConstraint& constraint : this->_tetConstraints) {
+      //   constraint.projectToAuxiliaryVariable(this->_nodes);
+      // }
+
+      // for (VolumeConstraint& constraint : this->_volumeConstraints) {
+      //   constraint.projectToAuxiliaryVariable(this->_nodes);
+      // }
+
       for (PositionConstraint& constraint : this->_positionConstraints) {
         constraint.projectToAuxiliaryVariable(this->_nodes);
       }
@@ -275,15 +313,7 @@ void Solver::tickPD(float /*timestep*/) {
         constraint.projectToAuxiliaryVariable(this->_nodes);
       }
 
-      for (TetrahedralConstraint& constraint : this->_tetConstraints) {
-        constraint.projectToAuxiliaryVariable(this->_nodes);
-      }
-
       for (BendConstraint& constraint : this->_bendConstraints) {
-        constraint.projectToAuxiliaryVariable(this->_nodes);
-      }
-
-      for (VolumeConstraint& constraint : this->_volumeConstraints) {
         constraint.projectToAuxiliaryVariable(this->_nodes);
       }
 
@@ -313,6 +343,10 @@ void Solver::tickPD(float /*timestep*/) {
 
       for (DistanceConstraint& constraint : this->_distanceConstraints) {
         constraint.setupGlobalForceVector(this->_forceVector);
+      }
+
+      for (size_t i = 0; i < this->_options.threadCount; ++i) {
+        threads[i].join();
       }
 
       for (TetrahedralConstraint& constraint : this->_tetConstraints) {
@@ -625,9 +659,9 @@ SpatialHashGridCellRange ccdRange(
 
   glm::vec3 adjustedDiameter =
       glm::ceil(glm::fract(gridLocalMin) + glm::vec3(2 * gridLocalRadius));
-  range.lengthX = static_cast<uint32_t>(adjustedDiameter.r);
-  range.lengthY = static_cast<uint32_t>(adjustedDiameter.g);
-  range.lengthZ = static_cast<uint32_t>(adjustedDiameter.b);
+  range.lengthX = static_cast<uint32_t>(adjustedDiameter.x);
+  range.lengthY = static_cast<uint32_t>(adjustedDiameter.y);
+  range.lengthZ = static_cast<uint32_t>(adjustedDiameter.z);
 
   if (range.lengthX > 20 || range.lengthY > 20 || range.lengthZ > 20) {
     return {};
@@ -656,9 +690,8 @@ SpatialHashGridCellRange sweptTriRange(
     min = glm::min(node.prevPosition, min);
   }
 
-  glm::vec3 x1 = nodes[triangle.nodeIds[0]].position / grid.scale;
-  glm::vec3 x2 = nodes[triangle.nodeIds[1]].position / grid.scale;
-  glm::vec3 x3 = nodes[triangle.nodeIds[2]].position / grid.scale;
+  min /= grid.scale;
+  max /= grid.scale;
 
   SpatialHashGridCellRange range{};
   range.minX = static_cast<int64_t>(glm::floor(min.x));
@@ -674,6 +707,25 @@ SpatialHashGridCellRange sweptTriRange(
   }
 
   return range;
+}
+
+bool trianglesFacingIn(
+    const Triangle& tri1,
+    const Triangle& tri2,
+    const std::vector<Node>& nodes) {
+  const glm::vec3& a = nodes[tri1.nodeIds[0]].position;
+  const glm::vec3& b = nodes[tri1.nodeIds[1]].position;
+  const glm::vec3& c = nodes[tri1.nodeIds[2]].position;
+
+  const glm::vec3& d = nodes[tri2.nodeIds[0]].position;
+  const glm::vec3& e = nodes[tri2.nodeIds[1]].position;
+  const glm::vec3& f = nodes[tri2.nodeIds[2]].position;
+
+  glm::vec3 n1 = glm::normalize(glm::cross(b - a, c - a));
+  glm::vec3 n2 = glm::normalize(glm::cross(e - d, f - d));
+
+  // Have further limited cone?
+  return glm::dot(n1, n2) < 0.0f;
 }
 } // namespace
 
@@ -769,6 +821,10 @@ void Solver::_parallelPointTriangleCollisions() {
                 continue;
               }
 
+              if (!trianglesFacingIn(tri, *pOtherTri, nodes)) {
+                continue;
+              }
+
               const Node& nodeB = nodes[pOtherTri->nodeIds[0]];
               const Node& nodeC = nodes[pOtherTri->nodeIds[1]];
               const Node& nodeD = nodes[pOtherTri->nodeIds[2]];
@@ -854,7 +910,7 @@ void Solver::_parallelPointTriangleCollisions() {
       this->_simFailed = true;
       return;
     }
-    
+
     for (const PointTriangleCollisionConstraint& collision :
          data.triCollisions) {
       // collision.setupGlobalForceVector(this->_forceVector);
@@ -889,9 +945,9 @@ SpatialHashGridCellRange Solver::NodeCompRange::operator()(
 
   glm::vec3 adjustedDiameter =
       glm::ceil(glm::fract(gridLocalMin) + glm::vec3(2 * gridLocalRadius));
-  range.lengthX = static_cast<uint32_t>(adjustedDiameter.r);
-  range.lengthY = static_cast<uint32_t>(adjustedDiameter.g);
-  range.lengthZ = static_cast<uint32_t>(adjustedDiameter.b);
+  range.lengthX = static_cast<uint32_t>(adjustedDiameter.x);
+  range.lengthY = static_cast<uint32_t>(adjustedDiameter.y);
+  range.lengthZ = static_cast<uint32_t>(adjustedDiameter.z);
 
   if (range.lengthX > 50 || range.lengthY > 50 || range.lengthZ > 50) {
     return {};
@@ -958,9 +1014,8 @@ SpatialHashGridCellRange Solver::TriCompRange::operator()(
     min = glm::min(node.prevPosition, min);
   }
 
-  glm::vec3 x1 = nodes[triangle.nodeIds[0]].position / grid.scale;
-  glm::vec3 x2 = nodes[triangle.nodeIds[1]].position / grid.scale;
-  glm::vec3 x3 = nodes[triangle.nodeIds[2]].position / grid.scale;
+  min /= grid.scale;
+  max /= grid.scale;
 
   SpatialHashGridCellRange range{};
   range.minX = static_cast<int64_t>(glm::floor(min.x));

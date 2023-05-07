@@ -48,6 +48,7 @@ struct PointTriangleCollisionConstraint {
   void projectToAuxiliaryVariable(const std::vector<Node>& nodes);
   void stabilizeCollisions(std::vector<Node>& nodes);
   void setupCollisionMatrix(Eigen::SparseMatrix<float>& systemMatrix) const;
+  void setupTriplets(std::vector<Eigen::Triplet<float>>& triplets) const;
   void setupGlobalForceVector(Eigen::MatrixXf& forceVector) const;
 };
 
@@ -82,6 +83,7 @@ struct StaticCollisionConstraint {
   StaticCollisionConstraint(const Node& node);
 
   void setupCollisionMatrix(Eigen::SparseMatrix<float>& systemMatrix) const;
+  void setupTriplets(std::vector<Eigen::Triplet<float>>& triplets) const;
   void projectToAuxiliaryVariable(const std::vector<Node>& nodes);
   void setupGlobalForceVector(Eigen::MatrixXf& forceVector) const;
 };
