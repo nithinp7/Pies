@@ -2,6 +2,7 @@
 
 #include "CollisionDetection.h"
 
+#include <Eigen/IterativeLinearSolvers>
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <cstdint>
@@ -11,8 +12,12 @@ namespace Pies {
 Solver::Solver(const SolverOptions& options)
     : _options(options),
       _spatialHashNodes(options.gridSpacing),
-      _spatialHashTets(options.gridSpacing),
       _spatialHashTris(options.gridSpacing) {
+  // TODO: Is this correct??
+  Eigen::initParallel();
+  omp_set_num_threads(this->_options.threadCount);
+  Eigen::setNbThreads(options.threadCount);
+
   this->_threadData.resize(this->_options.threadCount);
 }
 
@@ -267,9 +272,17 @@ void Solver::tickPD(float /*timestep*/) {
 
     this->_stiffnessAndCollisionMatrix =
         this->_stiffnessMatrix + this->_collisionMatrix;
-    this->_pLltDecomp =
-        std::make_unique<Eigen::SimplicialLLT<Eigen::SparseMatrix<float>>>(
-            this->_stiffnessAndCollisionMatrix);
+
+    // TODO: Use CHOLMOD rank-updates
+    // TODO: Can at least hide the latency of the below computation behind the
+    // first PD iteration since the decomposition result is not needed until the
+    // end of the first iteration.
+
+    std::thread updateDecompThread([this]() {
+      this->_pLltDecomp =
+          std::make_unique<Eigen::SimplicialLLT<Eigen::SparseMatrix<float>>>(
+              this->_stiffnessAndCollisionMatrix);
+    });
 
     for (uint32_t iter = 0; iter < this->_options.iterations; ++iter) {
       // Construct global force vector and set initial node position estimate
@@ -386,7 +399,11 @@ void Solver::tickPD(float /*timestep*/) {
       // Note: Make sure to offset the starting node index of each thread
       // to avoid false-sharing when writing to the state vector
 
-      // Solve the global system using the precomputed factorization
+      if (iter == 0) {
+        updateDecompThread.join();
+      }
+
+      // Approximate solver based on preconditioner
       this->_stateVector = this->_pLltDecomp->solve(this->_forceVector);
 
       // Update node positions from the global solve results
@@ -426,39 +443,6 @@ void Solver::tickPD(float /*timestep*/) {
       node.prevPosition = node.position;
       this->_vertices[i].position = node.position;
       // this->_vertices[i].baseColor = glm::vec3(0.0f, 1.0f, 0.0f);
-    }
-
-    // Update friction
-    for (const CollisionConstraint& collision : this->_collisions) {
-      Node& a = this->_nodes[collision.nodeIds[0]];
-      Node& b = this->_nodes[collision.nodeIds[1]];
-
-      glm::vec3 diff = b.position - a.position;
-      float dist = glm::length(diff);
-
-      if (dist > a.radius + b.radius) {
-        continue;
-      }
-
-      glm::vec3 n = diff / dist;
-
-      glm::vec3 relativeVelocity = b.velocity - a.velocity;
-      glm::vec3 perpVel = relativeVelocity - glm::dot(relativeVelocity, n) * n;
-
-      float friction = -this->_options.friction;
-      if (glm::length(perpVel) < this->_options.staticFrictionThreshold) {
-        friction = 1.0f;
-      }
-
-      float wSum = a.invMass + b.invMass;
-
-      a.velocity += -friction * perpVel * a.invMass / wSum;
-      b.velocity += friction * perpVel * b.invMass / wSum;
-
-      // this->_vertices[collision.nodeIds[0]].baseColor =
-      //     glm::vec3(1.0f, 0.0f, 0.0f);
-      // this->_vertices[collision.nodeIds[1]].baseColor =
-      //     glm::vec3(1.0f, 0.0f, 0.0f);
     }
 
     // Update friction
@@ -673,7 +657,8 @@ SpatialHashGridCellRange ccdRange(
 SpatialHashGridCellRange sweptTriRange(
     const Triangle& triangle,
     const std::vector<Node>& nodes,
-    const SpatialHashGrid& grid) {
+    const SpatialHashGrid& grid,
+    float threshold) {
   const Node& n1 = nodes[triangle.nodeIds[0]];
   const Node& n2 = nodes[triangle.nodeIds[1]];
   const Node& n3 = nodes[triangle.nodeIds[2]];
@@ -689,6 +674,10 @@ SpatialHashGridCellRange sweptTriRange(
     min = glm::min(node.position, min);
     min = glm::min(node.prevPosition, min);
   }
+
+  glm::vec3 padding(0.5f * threshold);
+  min -= padding;
+  max += padding;
 
   min /= grid.scale;
   max /= grid.scale;
@@ -742,7 +731,9 @@ void Solver::_parallelPointTriangleCollisions() {
     this->_clearSpatialHashThread.join();
   }
 
-  this->_spatialHashTris.parallelBulkInsert(this->_triangles, {this->_nodes});
+  this->_spatialHashTris.parallelBulkInsert(
+      this->_triangles,
+      {this->_nodes, this->_options.collisionThresholdDistance});
 
   // Detect and resolve collisions
   auto fnComputeCollisions =
@@ -768,7 +759,7 @@ void Solver::_parallelPointTriangleCollisions() {
           const Triangle& tri = triangles[triId];
 
           SpatialHashGridCellRange range =
-              sweptTriRange(tri, nodes, spatialHash.getGrid());
+              sweptTriRange(tri, nodes, spatialHash.getGrid(), threshold);
           //     ccdRange(nodeA.prevPosition, nodeA.position,
           //     spatialHash.getGrid());
 
@@ -821,9 +812,9 @@ void Solver::_parallelPointTriangleCollisions() {
                 continue;
               }
 
-              if (!trianglesFacingIn(tri, *pOtherTri, nodes)) {
-                continue;
-              }
+              // if (!trianglesFacingIn(tri, *pOtherTri, nodes)) {
+              //   continue;
+              // }
 
               const Node& nodeB = nodes[pOtherTri->nodeIds[0]];
               const Node& nodeC = nodes[pOtherTri->nodeIds[1]];
@@ -956,45 +947,6 @@ SpatialHashGridCellRange Solver::NodeCompRange::operator()(
   return range;
 }
 
-SpatialHashGridCellRange Solver::TetCompRange::operator()(
-    const Tetrahedron& tet,
-    const SpatialHashGrid& grid) const {
-  glm::vec3 x1 = nodes[tet.nodeIds[0]].position / grid.scale;
-  glm::vec3 x2 = nodes[tet.nodeIds[1]].position / grid.scale;
-  glm::vec3 x3 = nodes[tet.nodeIds[2]].position / grid.scale;
-  glm::vec3 x4 = nodes[tet.nodeIds[3]].position / grid.scale;
-
-  glm::vec3 min(std::numeric_limits<float>::max());
-  glm::vec3 max(std::numeric_limits<float>::lowest());
-
-  SpatialHashGridCellRange range{};
-  range.minX = static_cast<int64_t>(
-      glm::floor(glm::min(glm::min(glm::min(x1.x, x2.x), x3.x), x4.x)));
-  range.minY = static_cast<int64_t>(
-      glm::floor(glm::min(glm::min(glm::min(x1.y, x2.y), x3.y), x4.y)));
-  range.minZ = static_cast<int64_t>(
-      glm::floor(glm::min(glm::min(glm::min(x1.z, x2.z), x3.z), x4.z)));
-
-  range.lengthX = glm::max(
-      static_cast<uint32_t>(
-          glm::max(glm::max(glm::max(x1.x, x2.x), x3.x), x4.x) - range.minX),
-      1u);
-  range.lengthY = glm::max(
-      static_cast<uint32_t>(
-          glm::max(glm::max(glm::max(x1.y, x2.y), x3.y), x4.y) - range.minY),
-      1u);
-  range.lengthZ = glm::max(
-      static_cast<uint32_t>(
-          glm::max(glm::max(glm::max(x1.z, x2.z), x3.z), x4.z) - range.minZ),
-      1u);
-
-  if (range.lengthX > 50 || range.lengthY > 50 || range.lengthZ > 50) {
-    return {};
-  }
-
-  return range;
-}
-
 SpatialHashGridCellRange Solver::TriCompRange::operator()(
     const Triangle& triangle,
     const SpatialHashGrid& grid) const {
@@ -1013,6 +965,11 @@ SpatialHashGridCellRange Solver::TriCompRange::operator()(
     min = glm::min(node.position, min);
     min = glm::min(node.prevPosition, min);
   }
+
+  glm::vec3 padding(0.5f * this->threshold);
+
+  min -= padding;
+  max += padding;
 
   min /= grid.scale;
   max /= grid.scale;

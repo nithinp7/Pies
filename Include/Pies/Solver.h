@@ -124,16 +124,10 @@ private:
     operator()(const Node& node, const SpatialHashGrid& grid) const;
   };
 
-  struct TetCompRange {
-    const std::vector<Node>& nodes;
-
-    SpatialHashGridCellRange
-    operator()(const Tetrahedron& node, const SpatialHashGrid& grid) const;
-  };
-
   struct TriCompRange {
     const std::vector<Node>& nodes;
-
+    float threshold;
+    
     SpatialHashGridCellRange
     operator()(const Triangle& triangle, const SpatialHashGrid& grid) const;
   };
@@ -143,7 +137,6 @@ private:
 
   SpatialHash<Node, NodeCompRange> _spatialHashNodes;
   SpatialHash<Triangle, TriCompRange> _spatialHashTris;
-  SpatialHash<Tetrahedron, TetCompRange> _spatialHashTets;
 
   struct FixedRegion {
     glm::mat4 initialTransform{};

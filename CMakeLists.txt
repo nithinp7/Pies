@@ -31,6 +31,8 @@ if (NOT TARGET glm)
   add_subdirectory(Extern/glm)
 endif()
 
+find_package(OpenMP REQUIRED)
+
 add_subdirectory(Extern/tetgen)
 add_subdirectory(Extern/parallel-hashmap)
 
@@ -50,6 +52,7 @@ target_include_directories (Pies
       Extern/parallel-hashmap
       Extern/eigen)
 
+target_link_libraries(${PROJECT_NAME} PUBLIC OpenMP::OpenMP_CXX)
 target_link_libraries(${PROJECT_NAME} PUBLIC glm)
 target_link_libraries(${PROJECT_NAME} PUBLIC tetgen)
 target_link_libraries(${PROJECT_NAME} PUBLIC phmap)

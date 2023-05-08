@@ -76,7 +76,7 @@ struct EdgeCollisionConstraint {
 
 // TODO: Rename to floor collision...
 struct StaticCollisionConstraint {
-  float w = 10000.0f;
+  float w = 100000.0f;
   uint32_t nodeId;
   glm::vec3 projectedPosition;
 
