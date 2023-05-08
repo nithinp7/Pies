@@ -29,6 +29,7 @@ struct CollisionConstraint {
 };
 
 struct PointTriangleCollisionConstraint {
+  float toi;
   float w = 10000.0f;
   uint32_t nodeIds[4];
   glm::vec3 projectedPositions[4];
@@ -43,7 +44,8 @@ struct PointTriangleCollisionConstraint {
       const Node& b,
       const Node& c,
       const Node& d,
-      float thickness_);
+      float thickness_,
+      float toi_);
 
   void projectToAuxiliaryVariable(const std::vector<Node>& nodes);
   void stabilizeCollisions(std::vector<Node>& nodes);

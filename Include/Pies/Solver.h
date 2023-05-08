@@ -59,7 +59,6 @@ public:
   ~Solver();
 
   void tick(float deltaTime);
-  void tickPBD(float deltaTime);
   void tickPD(float deltaTime);
 
   const std::vector<Vertex>& getVertices() const { return this->_vertices; }
@@ -116,7 +115,6 @@ public:
   void createBendSheet(const glm::vec3& translation, float scale, float w);
 
 private:
-  void _parallelComputeCollisions();
   void _parallelPointTriangleCollisions();
 
   struct NodeCompRange {
@@ -156,7 +154,10 @@ private:
   std::vector<BendConstraint> _bendConstraints;
 
   uint32_t _previousNodeCount = 0;
-  Eigen::MatrixXf _stateVector;
+  Eigen::VectorXf _stateVectorX;
+  Eigen::VectorXf _stateVectorY;
+  Eigen::VectorXf _stateVectorZ;
+
   Eigen::MatrixXf _forceVector;
   Eigen::MatrixXf _Msn_h2;
   Eigen::SparseMatrix<float> _stiffnessMatrix;
@@ -166,7 +167,6 @@ private:
   std::unique_ptr<Eigen::SimplicialLLT<Eigen::SparseMatrix<float>>> _pLltDecomp;
 
   struct ThreadData {
-    std::vector<CollisionConstraint> collisions;
     std::vector<PointTriangleCollisionConstraint> triCollisions;
     std::vector<EdgeCollisionConstraint> edgeCollisions;
     std::vector<StaticCollisionConstraint> staticCollisions;
@@ -176,7 +176,6 @@ private:
 
   std::vector<ThreadData> _threadData;
 
-  std::vector<CollisionConstraint> _collisions;
   std::vector<PointTriangleCollisionConstraint> _triCollisions;
   std::vector<EdgeCollisionConstraint> _edgeCollisions;
   std::vector<StaticCollisionConstraint> _staticCollisions;
