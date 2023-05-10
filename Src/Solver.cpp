@@ -4,6 +4,7 @@
 
 #include <Eigen/IterativeLinearSolvers>
 #include <glm/gtc/matrix_transform.hpp>
+#include <omp.h>
 
 #include <cstdint>
 
@@ -13,12 +14,14 @@ Solver::Solver(const SolverOptions& options)
     : _options(options),
       _spatialHashNodes(options.gridSpacing),
       _spatialHashTris(options.gridSpacing) {
-  // TODO: Is this correct??
+  // TODO: This is temporary, fix
+  assert(options.threadCount == 16);
+
   Eigen::initParallel();
-  omp_set_num_threads(this->_options.threadCount);
+  omp_set_num_threads(options.threadCount);
   Eigen::setNbThreads(options.threadCount);
 
-  this->_threadData.resize(this->_options.threadCount);
+  this->_threadData.resize(options.threadCount);
 }
 
 Solver::~Solver() {
@@ -151,17 +154,6 @@ void Solver::tickPD(float /*timestep*/) {
     this->_stiffnessAndCollisionMatrix =
         this->_stiffnessMatrix + this->_collisionMatrix;
 
-    // TODO: Use CHOLMOD rank-updates
-    // TODO: Can at least hide the latency of the below computation behind the
-    // first PD iteration since the decomposition result is not needed until the
-    // end of the first iteration.
-
-    std::thread updateDecompThread([this]() {
-      this->_pLltDecomp =
-          std::make_unique<Eigen::SimplicialLLT<Eigen::SparseMatrix<float>>>(
-              this->_stiffnessAndCollisionMatrix);
-    });
-
     for (uint32_t iter = 0; iter < this->_options.iterations; ++iter) {
       // Construct global force vector and set initial node position estimate
       this->_forceVector = this->_Msn_h2;
@@ -170,135 +162,142 @@ void Solver::tickPD(float /*timestep*/) {
       // TODO: Parallelize this step
       // TODO: Clean this up
 
-      auto fnProjectTets = [threadCount = this->_options.threadCount,
-                            &volConstraints = this->_volumeConstraints,
-                            &tetConstraints = this->_tetConstraints,
-                            &nodes = this->_nodes](size_t threadId) {
-        for (size_t i = threadId; i < volConstraints.size(); i += threadCount) {
-          volConstraints[i].projectToAuxiliaryVariable(nodes);
+#pragma omp parallel
+      {
+#pragma omp single nowait
+        {
+          if (iter == 0) {
+            // TODO: Use CHOLMOD rank-updates??
+
+            // We hide the latency of the below computation behind the first PD
+            // iteration since the decomposition result is not needed until the
+            // end of the first iteration.
+            this->_pLltDecomp = std::make_unique<
+                Eigen::SimplicialLLT<Eigen::SparseMatrix<float>>>(
+                this->_stiffnessAndCollisionMatrix);
+          }
         }
 
-        for (size_t i = threadId; i < tetConstraints.size(); i += threadCount) {
-          tetConstraints[i].projectToAuxiliaryVariable(nodes);
+#pragma omp for nowait
+        for (int i = 0; i < this->_volumeConstraints.size(); ++i) {
+          this->_volumeConstraints[i].projectToAuxiliaryVariable(this->_nodes);
         }
-      };
 
-      std::vector<std::thread> threads;
-      for (size_t i = 0; i < this->_options.threadCount; ++i) {
-        threads.emplace_back(fnProjectTets, i);
-      }
+#pragma omp for nowait
+        for (int i = 0; i < this->_tetConstraints.size(); ++i) {
+          this->_tetConstraints[i].projectToAuxiliaryVariable(this->_nodes);
+        }
 
-      // for (TetrahedralConstraint& constraint : this->_tetConstraints) {
-      //   constraint.projectToAuxiliaryVariable(this->_nodes);
-      // }
+#pragma omp single nowait
+        {
+          for (PositionConstraint& constraint : this->_positionConstraints) {
+            constraint.projectToAuxiliaryVariable(this->_nodes);
+          }
 
-      // for (VolumeConstraint& constraint : this->_volumeConstraints) {
-      //   constraint.projectToAuxiliaryVariable(this->_nodes);
-      // }
+          for (DistanceConstraint& constraint : this->_distanceConstraints) {
+            constraint.projectToAuxiliaryVariable(this->_nodes);
+          }
 
-      for (PositionConstraint& constraint : this->_positionConstraints) {
-        constraint.projectToAuxiliaryVariable(this->_nodes);
-      }
+          for (BendConstraint& constraint : this->_bendConstraints) {
+            constraint.projectToAuxiliaryVariable(this->_nodes);
+          }
 
-      for (DistanceConstraint& constraint : this->_distanceConstraints) {
-        constraint.projectToAuxiliaryVariable(this->_nodes);
-      }
+          for (ShapeMatchingConstraint& constraint : this->_shapeConstraints) {
+            constraint.projectToAuxiliaryVariable(this->_nodes);
+          }
 
-      for (BendConstraint& constraint : this->_bendConstraints) {
-        constraint.projectToAuxiliaryVariable(this->_nodes);
-      }
+          for (GoalMatchingConstraint& constraint : this->_goalConstraints) {
+            constraint.projectToAuxiliaryVariable(this->_nodes);
+          }
 
-      for (ShapeMatchingConstraint& constraint : this->_shapeConstraints) {
-        constraint.projectToAuxiliaryVariable(this->_nodes);
-      }
+          for (PointTriangleCollisionConstraint& collision :
+               this->_triCollisions) {
+            collision.projectToAuxiliaryVariable(this->_nodes);
+          }
 
-      for (GoalMatchingConstraint& constraint : this->_goalConstraints) {
-        constraint.projectToAuxiliaryVariable(this->_nodes);
-      }
+          for (EdgeCollisionConstraint& collision : this->_edgeCollisions) {
+            collision.projectToAuxiliaryVariable(this->_nodes);
+          }
 
-      for (PointTriangleCollisionConstraint& collision : this->_triCollisions) {
-        collision.projectToAuxiliaryVariable(this->_nodes);
-      }
+          for (StaticCollisionConstraint& collision : this->_staticCollisions) {
+            collision.projectToAuxiliaryVariable(this->_nodes);
+          }
+        }
 
-      for (EdgeCollisionConstraint& collision : this->_edgeCollisions) {
-        collision.projectToAuxiliaryVariable(this->_nodes);
-      }
+#pragma omp barrier
 
-      for (StaticCollisionConstraint& collision : this->_staticCollisions) {
-        collision.projectToAuxiliaryVariable(this->_nodes);
-      }
+#pragma omp single
+        {
+          for (PositionConstraint& constraint : this->_positionConstraints) {
+            constraint.setupGlobalForceVector(this->_forceVector);
+          }
 
-      for (PositionConstraint& constraint : this->_positionConstraints) {
-        constraint.setupGlobalForceVector(this->_forceVector);
-      }
+          for (DistanceConstraint& constraint : this->_distanceConstraints) {
+            constraint.setupGlobalForceVector(this->_forceVector);
+          }
 
-      for (DistanceConstraint& constraint : this->_distanceConstraints) {
-        constraint.setupGlobalForceVector(this->_forceVector);
-      }
+          for (TetrahedralConstraint& constraint : this->_tetConstraints) {
+            constraint.setupGlobalForceVector(this->_forceVector);
+          }
 
-      for (size_t i = 0; i < this->_options.threadCount; ++i) {
-        threads[i].join();
-      }
+          for (VolumeConstraint& constraint : this->_volumeConstraints) {
+            constraint.setupGlobalForceVector(this->_forceVector);
+          }
+          for (BendConstraint& constraint : this->_bendConstraints) {
+            constraint.setupGlobalForceVector(this->_forceVector);
+          }
 
-      for (TetrahedralConstraint& constraint : this->_tetConstraints) {
-        constraint.setupGlobalForceVector(this->_forceVector);
-      }
+          for (ShapeMatchingConstraint& constraint : this->_shapeConstraints) {
+            constraint.setupGlobalForceVector(this->_forceVector);
+          }
 
-      for (VolumeConstraint& constraint : this->_volumeConstraints) {
-        constraint.setupGlobalForceVector(this->_forceVector);
-      }
-      for (BendConstraint& constraint : this->_bendConstraints) {
-        constraint.setupGlobalForceVector(this->_forceVector);
-      }
+          for (GoalMatchingConstraint& constraint : this->_goalConstraints) {
+            constraint.setupGlobalForceVector(this->_forceVector);
+          }
 
-      for (ShapeMatchingConstraint& constraint : this->_shapeConstraints) {
-        constraint.setupGlobalForceVector(this->_forceVector);
-      }
+          for (const PointTriangleCollisionConstraint& collision :
+               this->_triCollisions) {
+            collision.setupGlobalForceVector(this->_forceVector);
+          }
 
-      for (GoalMatchingConstraint& constraint : this->_goalConstraints) {
-        constraint.setupGlobalForceVector(this->_forceVector);
-      }
+          for (const EdgeCollisionConstraint& collision :
+               this->_edgeCollisions) {
+            collision.setupGlobalForceVector(this->_forceVector);
+          }
 
-      for (const PointTriangleCollisionConstraint& collision :
-           this->_triCollisions) {
-        collision.setupGlobalForceVector(this->_forceVector);
-      }
+          for (const StaticCollisionConstraint& collision :
+               this->_staticCollisions) {
+            collision.setupGlobalForceVector(this->_forceVector);
+          }
+        }
 
-      for (const EdgeCollisionConstraint& collision : this->_edgeCollisions) {
-        collision.setupGlobalForceVector(this->_forceVector);
-      }
+        // Solve x,y,z coordinates in parallel
+#pragma omp single nowait
+        {
+          this->_stateVectorX =
+              this->_pLltDecomp->solve(this->_forceVector.col(0));
+        }
+#pragma omp single nowait
+        {
+          this->_stateVectorY =
+              this->_pLltDecomp->solve(this->_forceVector.col(1));
+        }
+#pragma omp single nowait
+        {
+          this->_stateVectorZ =
+              this->_pLltDecomp->solve(this->_forceVector.col(2));
+        }
 
-      for (const StaticCollisionConstraint& collision :
-           this->_staticCollisions) {
-        collision.setupGlobalForceVector(this->_forceVector);
-      }
+#pragma omp barrier
 
-      if (iter == 0) {
-        updateDecompThread.join();
-      }
-
-      // Solve x,y,z coordinates in parallel
-      std::vector<std::thread> solveThreads;
-      solveThreads.emplace_back([this]() {
-        this->_stateVectorX = this->_pLltDecomp->solve(this->_forceVector.col(0));
-      });
-      solveThreads.emplace_back([this]() {
-        this->_stateVectorY = this->_pLltDecomp->solve(this->_forceVector.col(1));
-      });
-      solveThreads.emplace_back([this]() {
-        this->_stateVectorZ = this->_pLltDecomp->solve(this->_forceVector.col(2));
-      });
-
-      for (std::thread& solveThread : solveThreads) {
-        solveThread.join();
-      }
-
-      // Update node positions from the global solve results
-      for (uint32_t i = 0; i < nodeCount; ++i) {
-        Node& node = this->_nodes[i];
-        node.position.x = this->_stateVectorX.coeff(i);
-        node.position.y = this->_stateVectorY.coeff(i);
-        node.position.z = this->_stateVectorZ.coeff(i);
+        // Update node positions from the global solve results
+#pragma omp for
+        for (int i = 0; i < nodeCount; ++i) {
+          Node& node = this->_nodes[i];
+          node.position.x = this->_stateVectorX.coeff(i);
+          node.position.y = this->_stateVectorY.coeff(i);
+          node.position.z = this->_stateVectorZ.coeff(i);
+        }
       }
     }
 
@@ -388,7 +387,7 @@ void Solver::tickPD(float /*timestep*/) {
       node.velocity += -friction * perpVel;
     }
   }
-}
+} // namespace Pies
 
 void Solver::clear() {
   this->_lines.clear();
@@ -436,7 +435,7 @@ SpatialHashGridCellRange ccdRange(
   range.lengthY = static_cast<uint32_t>(adjustedDiameter.y);
   range.lengthZ = static_cast<uint32_t>(adjustedDiameter.z);
 
-  if (range.lengthX > 20 || range.lengthY > 20 || range.lengthZ > 20) {
+  if (range.lengthX > 60 || range.lengthY > 60 || range.lengthZ > 60) {
     return {};
   }
 
@@ -447,7 +446,8 @@ SpatialHashGridCellRange sweptTriRange(
     const Triangle& triangle,
     const std::vector<Node>& nodes,
     const SpatialHashGrid& grid,
-    float threshold) {
+    float threshold,
+    bool& simFailed) {
   const Node& n1 = nodes[triangle.nodeIds[0]];
   const Node& n2 = nodes[triangle.nodeIds[1]];
   const Node& n3 = nodes[triangle.nodeIds[2]];
@@ -480,7 +480,8 @@ SpatialHashGridCellRange sweptTriRange(
   range.lengthY = static_cast<uint32_t>(glm::ceil(max.y) - range.minY);
   range.lengthZ = static_cast<uint32_t>(glm::ceil(max.z) - range.minZ);
 
-  if (range.lengthX > 20 || range.lengthY > 20 || range.lengthZ > 20) {
+  if (range.lengthX > 60 || range.lengthY > 60 || range.lengthZ > 60) {
+    simFailed = true;
     return {};
   }
 
@@ -545,8 +546,16 @@ void Solver::_parallelPointTriangleCollisions() {
              triId += threadCount) {
           const Triangle& tri = triangles[triId];
 
-          SpatialHashGridCellRange range =
-              sweptTriRange(tri, nodes, spatialHash.getGrid(), threshold);
+          SpatialHashGridCellRange range = sweptTriRange(
+              tri,
+              nodes,
+              spatialHash.getGrid(),
+              threshold,
+              data.failed);
+          if (data.failed) {
+            return;
+          }
+
           //     ccdRange(nodeA.prevPosition, nodeA.position,
           //     spatialHash.getGrid());
 
@@ -669,16 +678,14 @@ void Solver::_parallelPointTriangleCollisions() {
         }
       };
 
-  std::vector<std::thread> threads;
-  for (uint32_t threadId = 0; threadId < this->_options.threadCount;
-       ++threadId) {
-    threads.emplace_back(fnComputeCollisions, threadId);
+// TODO: No need for lambda function fnComputeCollisions
+#pragma omp parallel
+  {
+    size_t thread_idx = static_cast<size_t>(omp_get_thread_num());
+    fnComputeCollisions(thread_idx);
   }
 
-  for (std::thread& thread : threads) {
-    thread.join();
-  }
-
+  // TODO: Use OpenMP instead of std thread here as well??
   this->_clearSpatialHashThread =
       std::thread([this]() { this->_spatialHashTris.clear(); });
 
