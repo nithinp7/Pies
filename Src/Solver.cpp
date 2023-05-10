@@ -413,35 +413,6 @@ void Solver::clear() {
 }
 
 namespace {
-SpatialHashGridCellRange ccdRange(
-    const glm::vec3& prevPos,
-    const glm::vec3& pos,
-    const SpatialHashGrid& grid) {
-  float radius = 0.5f * glm::length(pos - prevPos);
-  glm::vec3 center = 0.5f * pos + 0.5f * prevPos;
-  float radiusPadding = 1.0f;
-  float gridLocalRadius = (radius + radiusPadding) / grid.scale;
-  glm::vec3 gridLocalPos = center / grid.scale;
-  glm::vec3 gridLocalMin = gridLocalPos - glm::vec3(gridLocalRadius);
-
-  SpatialHashGridCellRange range{};
-  range.minX = static_cast<int64_t>(glm::floor(gridLocalMin.x));
-  range.minY = static_cast<int64_t>(glm::floor(gridLocalMin.y));
-  range.minZ = static_cast<int64_t>(glm::floor(gridLocalMin.z));
-
-  glm::vec3 adjustedDiameter =
-      glm::ceil(glm::fract(gridLocalMin) + glm::vec3(2 * gridLocalRadius));
-  range.lengthX = static_cast<uint32_t>(adjustedDiameter.x);
-  range.lengthY = static_cast<uint32_t>(adjustedDiameter.y);
-  range.lengthZ = static_cast<uint32_t>(adjustedDiameter.z);
-
-  if (range.lengthX > 60 || range.lengthY > 60 || range.lengthZ > 60) {
-    return {};
-  }
-
-  return range;
-}
-
 SpatialHashGridCellRange sweptTriRange(
     const Triangle& triangle,
     const std::vector<Node>& nodes,
@@ -500,8 +471,8 @@ bool trianglesFacingIn(
   const glm::vec3& e = nodes[tri2.nodeIds[1]].position;
   const glm::vec3& f = nodes[tri2.nodeIds[2]].position;
 
-  glm::vec3 n1 = glm::normalize(glm::cross(b - a, c - a));
-  glm::vec3 n2 = glm::normalize(glm::cross(e - d, f - d));
+  glm::vec3 n1 = glm::cross(b - a, c - a);
+  glm::vec3 n2 = glm::cross(e - d, f - d);
 
   // Have further limited cone?
   return glm::dot(n1, n2) < 0.0f;
@@ -587,7 +558,7 @@ void Solver::_parallelPointTriangleCollisions() {
             // Check all triangles in the bucket
             for (const Triangle* pOtherTri : pBucket->values) {
 
-              if (pBucket->values.size() > 200) {
+              if (pBucket->values.size() > 500) {
                 // Safety check to avoid simulation hangs
                 data.failed = true;
                 return;
@@ -608,9 +579,9 @@ void Solver::_parallelPointTriangleCollisions() {
                 continue;
               }
 
-              // if (!trianglesFacingIn(tri, *pOtherTri, nodes)) {
-              //    continue;
-              // }
+              if (!trianglesFacingIn(tri, *pOtherTri, nodes)) {
+                 continue;
+              }
 
               const Node& nodeB = nodes[pOtherTri->nodeIds[0]];
               const Node& nodeC = nodes[pOtherTri->nodeIds[1]];

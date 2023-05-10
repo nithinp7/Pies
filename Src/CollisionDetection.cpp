@@ -116,14 +116,14 @@ struct CubicExpression {
     float derivLinearCoeff = 2 * this->quadCoeff;
     float derivConst = this->linearCoeff;
 
-    const uint32_t NEWTON_ITERS = 50;
-    const float EPS = 0.0001f;
+    const uint32_t NEWTON_ITERS = 20;
+    const float EPS = 0.001f;
 
     // Initial guess half-way in the interval, hopefully sufficiently far away from
     // critical points.
     float t = interval->start;
     for (uint32_t i = 0; i < NEWTON_ITERS; ++i) {
-      // Coefficients of derivative
+      // Derivative evaluated at t
       float fpt =
           derivQuadCoeff * t * t + derivLinearCoeff * t + derivConst;
       float ft = this->eval(t);
@@ -235,14 +235,18 @@ std::optional<float> pointTriangleCCD(
 
   // Early check to see if the point ever crosses the triangle plane
   // Assumes normal doesn't rotate significantly over the short interval.
-  glm::vec3 n0 = glm::normalize(glm::cross(ab0, ac0));
-  glm::vec3 n1 = glm::normalize(glm::cross(ab1, ac1));
+  glm::vec3 n0 = glm::cross(ab0, ac0);
+  glm::vec3 n1 = glm::cross(ab1, ac1);
   float nDotP0 = glm::dot(n0, ap0);
   float nDotP1 = glm::dot(n1, ap1);
 
   if (nDotP0 * nDotP1 >= 0.0f) {
     // The point never crosses the plane of the triangle. We still consider it
     // to be colliding if it is within the thickness.
+
+    float n1mag = glm::length(n1);
+    nDotP1 /= n1mag;
+    n1 /= n1mag;
 
     // TODO: Should we consider points _behind_ the triangle??
     if (nDotP1 >= 0.0f && nDotP1 < thresholdDistance) {
@@ -254,7 +258,7 @@ std::optional<float> pointTriangleCCD(
         return std::nullopt;
       }
 
-      return 0.0f;
+      return 1.0f;
     }
 
     return std::nullopt;
@@ -273,8 +277,8 @@ std::optional<float> pointTriangleCCD(
   expandTerm(ac0.x, ap0.y, ab0.z, acd.x, apd.y, abd.z, expression);
   expandTerm(-ac0.x, ab0.y, ap0.z, -acd.x, abd.y, apd.z, expression);
 
-  // std::optional<float> t = expression.fastFindRootInInterval();
-  std::optional<float> t = expression.findRootInInterval();
+  std::optional<float> t = expression.fastFindRootInInterval();
+  //std::optional<float> t = expression.findRootInInterval();
 
   if (!t) {
     // CCD failed to find a point-plane intersection. Static collision has
