@@ -45,9 +45,6 @@ void Solver::tick(float timestep) {
 void Solver::tickPD(float /*timestep*/) {
   uint32_t nodeCount = static_cast<uint32_t>(this->_nodes.size());
 
-  float h = this->_options.fixedTimestepSize / this->_options.timeSubsteps;
-  float h2 = h * h;
-
   if (this->_previousNodeCount != nodeCount) {
     this->_previousNodeCount = nodeCount;
 
@@ -59,10 +56,10 @@ void Solver::tickPD(float /*timestep*/) {
     this->_stiffnessAndCollisionMatrix =
         Eigen::SparseMatrix<float>(nodeCount, nodeCount);
 
-    for (uint32_t i = 0; i < nodeCount; ++i) {
-      this->_stiffnessMatrix.coeffRef(i, i) =
-          1.0f / (this->_nodes[i].invMass * h2);
-    }
+    // for (uint32_t i = 0; i < nodeCount; ++i) {
+    //   this->_stiffnessMatrix.coeffRef(i, i) =
+    //       1.0f / (this->_nodes[i].invMass * h2);
+    // }
 
     for (PositionConstraint& constraint : this->_positionConstraints) {
       constraint.setupGlobalStiffnessMatrix(this->_stiffnessMatrix);
@@ -111,7 +108,14 @@ void Solver::tickPD(float /*timestep*/) {
     node.force = glm::vec3(0.0f, -this->_options.gravity, 0.0f) / node.invMass;
   }
 
-  for (uint32_t substep = 0; substep < this->_options.timeSubsteps; ++substep) {
+  float timeLeft = this->_options.fixedTimestepSize;
+  const uint32_t MAX_SUBSTEPS = 20;
+
+  for (uint32_t substep = 0; substep < MAX_SUBSTEPS && timeLeft > 0.0001f;
+       ++substep) {
+    float h = timeLeft;
+    float h2 = h * h;
+
     for (uint32_t i = 0; i < nodeCount; ++i) {
       Node& node = this->_nodes[i];
       // Construct momentum estimate for qn+1
@@ -123,19 +127,18 @@ void Solver::tickPD(float /*timestep*/) {
       this->_Msn_h2.coeffRef(i, 2) = Msn_h2.z;
     }
 
-    this->_parallelPointTriangleCollisions();
+    if (substep == 0) {
+      this->_parallelPointTriangleCollisions();
+    }
 
     // this->_collisionMatrix.setZero();
     this->_stiffnessAndCollisionMatrix.setZero();
 
-    // TODO: Change this to be a member variable
-    static std::vector<Eigen::Triplet<float>> collisionTriplets;
-    collisionTriplets.clear();
+    this->_collisionTriplets.clear();
 
     for (const PointTriangleCollisionConstraint& collision :
          this->_triCollisions) {
-      collision.setupTriplets(collisionTriplets);
-      // collision.setupCollisionMatrix(this->_collisionMatrix);
+      collision.setupTriplets(this->_collisionTriplets);
     }
 
     // for (const EdgeCollisionConstraint& collision : this->_edgeCollisions) {
@@ -143,16 +146,48 @@ void Solver::tickPD(float /*timestep*/) {
     // }
 
     for (const StaticCollisionConstraint& collision : this->_staticCollisions) {
-      collision.setupTriplets(collisionTriplets);
-      // collision.setupCollisionMatrix(this->_collisionMatrix);
+      collision.setupTriplets(this->_collisionTriplets);
     }
 
     this->_collisionMatrix.setFromTriplets(
-        collisionTriplets.begin(),
-        collisionTriplets.end());
+        this->_collisionTriplets.begin(),
+        this->_collisionTriplets.end());
 
     this->_stiffnessAndCollisionMatrix =
         this->_stiffnessMatrix + this->_collisionMatrix;
+
+    // Truncate time-step to just before earliest collision
+    // TODO: Do this for static collisions too...
+    // float t = 1.0f;
+    // for (const PointTriangleCollisionConstraint& collision :
+    //      this->_triCollisions) {
+    //   if (collision.toi <= t) {
+    //     t = 0.9f * collision.toi;
+    //   }
+    // }
+
+    // // TODO: Add proper barrier potential to avoid this
+    // t = glm::max(t, 0.001f);
+
+    // h = t * h;
+    // h2 = h * h;
+    // timeLeft -= h;
+
+    // for (uint32_t i = 0; i < nodeCount; ++i) {
+    //   Node& node = this->_nodes[i];
+    //   // Construct momentum estimate for qn+1
+    //   node.position = glm::mix(node.prevPosition, node.position, t);
+
+    //   glm::vec3 Msn_h2 = node.position / node.invMass / h2;
+    //   this->_Msn_h2.coeffRef(i, 0) = Msn_h2.x;
+    //   this->_Msn_h2.coeffRef(i, 1) = Msn_h2.y;
+    //   this->_Msn_h2.coeffRef(i, 2) = Msn_h2.z;
+    // }
+
+    for (uint32_t i = 0; i < nodeCount; ++i) {
+      this->_stiffnessAndCollisionMatrix.coeffRef(i, i) +=
+          1.0f / (this->_nodes[i].invMass * h2);
+    }
 
     for (uint32_t iter = 0; iter < this->_options.iterations; ++iter) {
       // Construct global force vector and set initial node position estimate
@@ -319,13 +354,42 @@ void Solver::tickPD(float /*timestep*/) {
       }
     }
 
-    // Update node velocities
+    // Update node velocities with the non-truncated h value (to avoid
+    // divide-by-zero)
     for (uint32_t i = 0; i < nodeCount; ++i) {
       Node& node = this->_nodes[i];
       node.velocity = (1.0f - this->_options.damping) *
-                          (node.position - node.prevPosition) / h +
-                      h * node.force * node.invMass;
+                      (node.position - node.prevPosition) / h;
+    }
 
+    // Truncate time-step to just before earliest collision
+    // TODO: Do this for static collisions too...
+    this->_parallelPointTriangleCollisions();
+
+    float t = 1.0f;
+    for (const PointTriangleCollisionConstraint& collision :
+         this->_triCollisions) {
+      if (0.9f * collision.toi <= t) {
+        t = 0.9f * collision.toi;
+      }
+    }
+
+    // TODO: Add proper barrier potential to avoid this
+    // t = glm::max(t, 0.001f);
+
+    h = t * h;
+    h2 = h * h;
+    timeLeft -= h;
+
+    for (uint32_t i = 0; i < nodeCount; ++i) {
+      Node& node = this->_nodes[i];
+      node.velocity += h * node.force * node.invMass;
+      // Construct momentum estimate for qn+1
+      node.position = glm::mix(node.prevPosition, node.position, t);
+    }
+
+    for (uint32_t i = 0; i < nodeCount; ++i) {
+      Node& node = this->_nodes[i];
       node.prevPosition = node.position;
       this->_vertices[i].position = node.position;
       // this->_vertices[i].baseColor = glm::vec3(0.0f, 1.0f, 0.0f);
@@ -643,7 +707,12 @@ void Solver::_parallelPointTriangleCollisions() {
           for (uint32_t i = 0; i < 3; ++i) {
             const Node& node = nodes[tri.nodeIds[i]];
             if (node.position.y < floorHeight + thickness) {
-              data.staticCollisions.emplace_back(node);
+              // TODO: Guard divide by zero??
+              float toi = glm::clamp(
+                  node.prevPosition.y / (node.prevPosition.y - node.position.y),
+                  0.0f,
+                  1.0f);
+              data.staticCollisions.emplace_back(node, toi);
             }
           }
         }

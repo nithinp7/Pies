@@ -78,11 +78,12 @@ struct EdgeCollisionConstraint {
 
 // TODO: Rename to floor collision...
 struct StaticCollisionConstraint {
-  float w = 100000.0f;
+  float toi = 1.0f;
+  float w = 10000.0f;
   uint32_t nodeId;
   glm::vec3 projectedPosition;
 
-  StaticCollisionConstraint(const Node& node);
+  StaticCollisionConstraint(const Node& node, float toi_);
 
   void setupCollisionMatrix(Eigen::SparseMatrix<float>& systemMatrix) const;
   void setupTriplets(std::vector<Eigen::Triplet<float>>& triplets) const;

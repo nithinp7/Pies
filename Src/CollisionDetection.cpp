@@ -65,7 +65,10 @@ struct CubicExpression {
 
         return (f0 * f1 <= 0.0f) ? std::optional<Interval>({0.0f, 1.0f})
                                  : std::nullopt;
-      } else {
+      } else if (t1 <= 0.0f) {
+        // All critical points are before the interval, so we have no roots
+        return std::nullopt;
+      } else  {
         // We have two intervals to check here, [0,t1] and [t1,1]
         float ft1 = this->eval(t1);
 

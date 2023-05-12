@@ -451,8 +451,8 @@ void EdgeCollisionConstraint::setupGlobalForceVector(
   }
 }
 
-StaticCollisionConstraint::StaticCollisionConstraint(const Node& node)
-    : nodeId(node.id) {}
+StaticCollisionConstraint::StaticCollisionConstraint(const Node& node, float toi_)
+    : toi(toi_), nodeId(node.id) {}
 
 void StaticCollisionConstraint::setupCollisionMatrix(
     Eigen::SparseMatrix<float>& systemMatrix) const {

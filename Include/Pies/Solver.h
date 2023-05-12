@@ -162,6 +162,7 @@ private:
   Eigen::MatrixXf _Msn_h2;
   Eigen::SparseMatrix<float> _stiffnessMatrix;
   Eigen::SparseMatrix<float> _collisionMatrix;
+  std::vector<Eigen::Triplet<float>> _collisionTriplets;
   Eigen::SparseMatrix<float> _stiffnessAndCollisionMatrix;
   // This isn't movable, so we keep it on the heap
   std::unique_ptr<Eigen::SimplicialLLT<Eigen::SparseMatrix<float>>> _pLltDecomp;
