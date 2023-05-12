@@ -177,6 +177,9 @@ struct TetrahedralConstraintProjection {
   float minStrain;
   float maxStrain;
 
+  float minOmega;
+  float maxOmega;
+
   void operator()(
       const std::vector<Node>& nodes,
       const std::array<uint32_t, 4>& nodeIds,
@@ -191,7 +194,9 @@ TetrahedralConstraint createTetrahedralConstraint(
     const Node& c,
     const Node& d,
     float minStrain = 0.8f,
-    float maxStrain = 1.0f);
+    float maxStrain = 1.0f,
+    float compression = 1.0f,
+    float stretching = 1.0f);
 
 struct VolumeConstraintProjection {
   glm::mat3 Qinv;

@@ -159,8 +159,6 @@ void Solver::tickPD(float /*timestep*/) {
       this->_forceVector = this->_Msn_h2;
 
       // Project all constraints onto auxiliary variable (local step)
-      // TODO: Parallelize this step
-      // TODO: Clean this up
 
 #pragma omp parallel
       {
@@ -178,17 +176,18 @@ void Solver::tickPD(float /*timestep*/) {
           }
         }
 
-#pragma omp for nowait
+#pragma omp for
         for (int i = 0; i < this->_volumeConstraints.size(); ++i) {
           this->_volumeConstraints[i].projectToAuxiliaryVariable(this->_nodes);
         }
 
-#pragma omp for nowait
+#pragma omp for
         for (int i = 0; i < this->_tetConstraints.size(); ++i) {
           this->_tetConstraints[i].projectToAuxiliaryVariable(this->_nodes);
         }
 
-#pragma omp single nowait
+// Parallelize the rest of the constraints??
+#pragma omp single
         {
           for (PositionConstraint& constraint : this->_positionConstraints) {
             constraint.projectToAuxiliaryVariable(this->_nodes);
@@ -223,8 +222,6 @@ void Solver::tickPD(float /*timestep*/) {
             collision.projectToAuxiliaryVariable(this->_nodes);
           }
         }
-
-#pragma omp barrier
 
 #pragma omp single
         {
@@ -271,24 +268,27 @@ void Solver::tickPD(float /*timestep*/) {
           }
         }
 
-        // Solve x,y,z coordinates in parallel
-#pragma omp single nowait
-        {
-          this->_stateVectorX =
-              this->_pLltDecomp->solve(this->_forceVector.col(0));
-        }
-#pragma omp single nowait
-        {
-          this->_stateVectorY =
-              this->_pLltDecomp->solve(this->_forceVector.col(1));
-        }
-#pragma omp single nowait
-        {
-          this->_stateVectorZ =
-              this->_pLltDecomp->solve(this->_forceVector.col(2));
-        }
-
 #pragma omp barrier
+
+        // Solve x,y,z coordinates in parallel
+#pragma omp sections
+        {
+#pragma omp section
+          {
+            this->_stateVectorX =
+                this->_pLltDecomp->solve(this->_forceVector.col(0));
+          }
+#pragma omp section
+          {
+            this->_stateVectorY =
+                this->_pLltDecomp->solve(this->_forceVector.col(1));
+          }
+#pragma omp section
+          {
+            this->_stateVectorZ =
+                this->_pLltDecomp->solve(this->_forceVector.col(2));
+          }
+        }
 
         // Update node positions from the global solve results
 #pragma omp for
@@ -580,7 +580,7 @@ void Solver::_parallelPointTriangleCollisions() {
               }
 
               if (!trianglesFacingIn(tri, *pOtherTri, nodes)) {
-                 continue;
+                continue;
               }
 
               const Node& nodeB = nodes[pOtherTri->nodeIds[0]];

@@ -299,17 +299,7 @@ void Solver::addTriMeshVolume(
           this->_nodes[existingNodesCount + v3],
           this->_nodes[existingNodesCount + v4],
           minStrain,
-          maxStrain));
-    }
-
-    if (volumeStiffness != 0.0f) {
-      this->_volumeConstraints.push_back(createVolumeConstraint(
-          this->_constraintId++,
-          volumeStiffness,
-          this->_nodes[existingNodesCount + v1],
-          this->_nodes[existingNodesCount + v2],
-          this->_nodes[existingNodesCount + v3],
-          this->_nodes[existingNodesCount + v4],
+          maxStrain,
           compression,
           stretching));
     }

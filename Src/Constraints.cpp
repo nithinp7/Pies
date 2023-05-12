@@ -73,6 +73,25 @@ createPositionConstraint(uint32_t id, const Node& node, float w) {
       {node.id});
 }
 
+static glm::vec3
+computeD(const glm::vec3& sigma, float omegaMin, float omegaMax) {
+  const uint32_t COMP_D_ITERS = 10;
+  glm::vec3 D(0.0f);
+  for (uint32_t i = 0; i < COMP_D_ITERS; ++i) {
+    glm::vec3 sigmaPlusD = sigma + D;
+    float product = sigmaPlusD.x * sigmaPlusD.y * sigmaPlusD.z;
+    float omega = glm::clamp(product, omegaMin, omegaMax);
+    float C = product - omega;
+    glm::vec3 gradC(
+        sigmaPlusD.y * sigmaPlusD.z,
+        sigmaPlusD.x * sigmaPlusD.z,
+        sigmaPlusD.x * sigmaPlusD.y);
+    D = (glm::dot(gradC, D) - C) * gradC / glm::dot(gradC, gradC);
+  }
+
+  return D;
+}
+
 void TetrahedralConstraintProjection::operator()(
     const std::vector<Node>& nodes,
     const std::array<uint32_t, 4>& nodeIds,
@@ -98,11 +117,19 @@ void TetrahedralConstraintProjection::operator()(
       F_,
       Eigen::ComputeFullU | Eigen::ComputeFullV);
   Eigen::Vector3f singularValues = svdF.singularValues();
+  glm::vec3 D = computeD(
+      glm::vec3(singularValues[0], singularValues[1], singularValues[2]),
+      this->minOmega,
+      this->maxOmega);
+  singularValues[0] += D.x;
+  singularValues[1] += D.y;
+  singularValues[2] += D.z;
+  
   for (uint32_t i = 0; i < 3; ++i) {
     singularValues[i] =
         glm::clamp(singularValues[i], this->minStrain, this->maxStrain);
   }
-
+  
   if (glm::determinant(F) < 0.0f) {
     singularValues[2] *= -1.0f;
   }
@@ -135,7 +162,9 @@ TetrahedralConstraint createTetrahedralConstraint(
     const Node& x3,
     const Node& x4,
     float minStrain,
-    float maxStrain) {
+    float maxStrain,
+    float compression,
+    float stretching) {
 
   // Converts world positions to differential coords
   Eigen::Matrix<float, 3, 4> worldToDiff = Eigen::Matrix<float, 3, 4>::Zero();
@@ -179,27 +208,8 @@ TetrahedralConstraint createTetrahedralConstraint(
       w,
       A,
       Eigen::Matrix4f::Identity(),
-      {baryToDiff, diffToBary, minStrain, maxStrain},
+      {baryToDiff, diffToBary, minStrain, maxStrain, compression, stretching},
       {x1.id, x2.id, x3.id, x4.id});
-}
-
-static glm::vec3
-computeD(const glm::vec3& sigma, float omegaMin, float omegaMax) {
-  const uint32_t COMP_D_ITERS = 10;
-  glm::vec3 D(0.0f);
-  for (uint32_t i = 0; i < COMP_D_ITERS; ++i) {
-    glm::vec3 sigmaPlusD = sigma + D;
-    float product = sigmaPlusD.x * sigmaPlusD.y * sigmaPlusD.z;
-    float omega = glm::clamp(product, omegaMin, omegaMax);
-    float C = product - omega;
-    glm::vec3 gradC(
-        sigmaPlusD.y * sigmaPlusD.z,
-        sigmaPlusD.x * sigmaPlusD.z,
-        sigmaPlusD.x * sigmaPlusD.y);
-    D = (glm::dot(gradC, D) - C) * gradC / glm::dot(gradC, gradC);
-  }
-
-  return D;
 }
 
 void VolumeConstraintProjection::operator()(
