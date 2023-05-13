@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.24 FATAL_ERROR)
 project(
     Pies
     VERSION 0.1.0
-    LANGUAGES CXX C)
+    LANGUAGES CXX C CUDA)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
@@ -51,11 +51,15 @@ target_include_directories (Pies
       Extern/tetgen
       Extern/parallel-hashmap
       Extern/eigen
-      Extern/eig3)
+      Extern/eig3
+      Extern/3x3_SVD_CUDA/svd3x3)
+
+add_library(svd3x3 STATIC Extern/3x3_SVD_CUDA/svd3x3/svd3x3/kernel.cu)
 
 target_link_libraries(${PROJECT_NAME} PUBLIC OpenMP::OpenMP_CXX)
 target_link_libraries(${PROJECT_NAME} PUBLIC glm)
 target_link_libraries(${PROJECT_NAME} PUBLIC tetgen)
 target_link_libraries(${PROJECT_NAME} PUBLIC phmap)
+target_link_libraries(${PROJECT_NAME} PUBLIC svd3x3)
 
 
