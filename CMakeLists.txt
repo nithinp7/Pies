@@ -8,7 +8,7 @@ project(
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
-include_directories(Include/Pies Src)
+include_directories(Include/Pies Src Extern/eig3)
 
 function(glob_files out_var_name regexes)
     set(files "")
@@ -25,7 +25,7 @@ function(glob_files out_var_name regexes)
 endfunction()
 
 glob_files(SRC_FILES_LIST Src/*.cpp)
-add_library(Pies ${SRC_FILES_LIST})
+add_library(Pies ${SRC_FILES_LIST} Extern/eig3/eig3.cpp)
 
 if (NOT TARGET glm)
   add_subdirectory(Extern/glm)
@@ -50,7 +50,8 @@ target_include_directories (Pies
       Extern/glm
       Extern/tetgen
       Extern/parallel-hashmap
-      Extern/eigen)
+      Extern/eigen
+      Extern/eig3)
 
 target_link_libraries(${PROJECT_NAME} PUBLIC OpenMP::OpenMP_CXX)
 target_link_libraries(${PROJECT_NAME} PUBLIC glm)

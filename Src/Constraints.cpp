@@ -92,7 +92,7 @@ computeD(const glm::vec3& sigma, float omegaMin, float omegaMax) {
   return D;
 }
 
-void TetrahedralConstraintProjection::operator()(
+/*void TetrahedralConstraintProjection::operator()(
     const std::vector<Node>& nodes,
     const std::array<uint32_t, 4>& nodeIds,
     std::array<glm::vec3, 4>& projected) const {
@@ -152,7 +152,7 @@ void TetrahedralConstraintProjection::operator()(
   projected[1] = P1[0];
   projected[2] = P1[1];
   projected[3] = P1[2];
-}
+}*/
 
 TetrahedralConstraint createTetrahedralConstraint(
     uint32_t id,

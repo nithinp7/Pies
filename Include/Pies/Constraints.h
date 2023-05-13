@@ -1,8 +1,11 @@
 #pragma once
 
 #include "Node.h"
+#include "eig3.h"
 
 #include <Eigen/Core>
+#include <Eigen/Dense>
+#include <Eigen/SVD>
 #include <Eigen/Sparse>
 
 #include <array>
@@ -102,8 +105,8 @@ public:
    * Uses the TProjection template parameter to do the projection.
    */
   void projectToAuxiliaryVariable(const std::vector<Node>& nodes) {
-    this->_projection(nodes, this->_nodeIds, this->_projectedConfig);    
-    
+    this->_projection(nodes, this->_nodeIds, this->_projectedConfig);
+
     // Set up projected nodes as eigen matrix
     Eigen::Matrix<float, NodeCount, 3> p;
     for (uint32_t i = 0; i < NodeCount; ++i) {
@@ -141,9 +144,7 @@ public:
 
   void setWeight(float w) { this->_w = w; }
 
-  TProjection& getProjection() {
-    return this->_projection;
-  }
+  TProjection& getProjection() { return this->_projection; }
 };
 
 struct DistanceConstraintProjection {
@@ -168,7 +169,8 @@ struct PositionConstraintProjection {
       std::array<glm::vec3, 1>& projected) const;
 };
 typedef Constraint<1, PositionConstraintProjection> PositionConstraint;
-PositionConstraint createPositionConstraint(uint32_t id, const Node& node, float w);
+PositionConstraint
+createPositionConstraint(uint32_t id, const Node& node, float w);
 
 struct TetrahedralConstraintProjection {
   glm::mat3 Q;
@@ -180,11 +182,95 @@ struct TetrahedralConstraintProjection {
   float minOmega;
   float maxOmega;
 
-  void operator()(
+  inline void operator()(
       const std::vector<Node>& nodes,
       const std::array<uint32_t, 4>& nodeIds,
-      std::array<glm::vec3, 4>& projected) const;
+      std::array<glm::vec3, 4>& projected) const {
+    const Node& x1 = nodes[nodeIds[0]];
+    const Node& x2 = nodes[nodeIds[1]];
+    const Node& x3 = nodes[nodeIds[2]];
+    const Node& x4 = nodes[nodeIds[3]];
+
+    glm::mat3 P(
+        x2.position - x1.position,
+        x3.position - x1.position,
+        x4.position - x1.position);
+
+    // Deformation gradient
+    glm::mat3 F = P * this->Qinv;
+
+    Eigen::Matrix3d F_;
+    F_ << F[0][0], F[0][1], F[0][2], F[1][0], F[1][1], F[1][2], F[2][0],
+        F[2][1], F[2][2];
+
+    double A[3][3];
+    A[0][0] = glm::dot(F[0], F[0]);
+    A[1][1] = glm::dot(F[1], F[1]);
+    A[2][2] = glm::dot(F[2], F[2]);
+
+    A[0][1] = A[1][0] = glm::dot(F[0], F[1]);
+    A[0][2] = A[2][0] = glm::dot(F[0], F[2]);
+    A[1][2] = A[2][1] = glm::dot(F[1], F[2]);
+
+    double d_[3];
+    double V_[3][3];
+    eigen_decomposition(A, V_, d_);
+
+    glm::mat3 V(
+        static_cast<float>(V_[0][0]),
+        static_cast<float>(V_[1][0]),
+        static_cast<float>(V_[2][0]),
+        static_cast<float>(V_[0][1]),
+        static_cast<float>(V_[1][1]),
+        static_cast<float>(V_[2][1]),
+        static_cast<float>(V_[0][2]),
+        static_cast<float>(V_[1][2]),
+        static_cast<float>(V_[2][2]));
+    
+    glm::vec3 sigma(
+        static_cast<float>(sqrt(d_[0])),
+        static_cast<float>(sqrt(d_[1])),
+        static_cast<float>(sqrt(d_[2])));
+
+    const uint32_t COMP_D_ITERS = 10;
+    glm::vec3 D(0.0f);
+    for (uint32_t i = 0; i < COMP_D_ITERS; ++i) {
+      glm::vec3 sigmaPlusD = sigma + D;
+      float product = sigmaPlusD.x * sigmaPlusD.y * sigmaPlusD.z;
+      float omega = glm::clamp(product, this->minOmega, this->maxOmega);
+      float C = product - omega;
+      glm::vec3 gradC(
+          sigmaPlusD.y * sigmaPlusD.z,
+          sigmaPlusD.x * sigmaPlusD.z,
+          sigmaPlusD.x * sigmaPlusD.y);
+      D = (glm::dot(gradC, D) - C) * gradC / glm::dot(gradC, gradC);
+    }
+
+    sigma += D;
+    sigma = glm::clamp(sigma, this->minStrain, this->maxStrain);
+
+    if (glm::determinant(F) < 0.0f) {
+      sigma[2] *= -1.0f;
+    }
+
+    glm::vec3 d = sigma * sigma;
+
+    // TODO: This is not right, U needs to be computed and all sorts of corner cases need
+    // to be handled to use eigen decomp in this context - see:
+    // Invertible Finite Elements For Robust Simulation of Large Deformation
+    // Irving et. al, 2004
+
+    // The "fixed" deformation gradient
+    glm::mat3 Fhat = glm::mat3(V[0] * d[0], V[1] * d[1], V[2] * d[2]) * glm::transpose(V);
+    glm::mat3 P1 = glm::transpose(Fhat);
+
+    projected[0] = glm::vec3(0.0f);
+    projected[1] = P1[0];
+    projected[2] = P1[1];
+    projected[3] = P1[2];
+  }
 };
+
 typedef Constraint<4, TetrahedralConstraintProjection> TetrahedralConstraint;
 TetrahedralConstraint createTetrahedralConstraint(
     uint32_t id,
