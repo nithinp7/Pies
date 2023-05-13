@@ -251,8 +251,8 @@ std::optional<float> pointTriangleCCD(
     nDotP1 /= n1mag;
     n1 /= n1mag;
 
-    // TODO: Should we consider points _behind_ the triangle??
-    if (nDotP1 >= 0.0f && nDotP1 < thresholdDistance) {
+    // Considers points behind the triangle as well...
+    if (glm::abs(nDotP1) < thresholdDistance) {
       glm::vec3 barycentricCoords = glm::inverse(glm::mat3(ab1, ac1, n1)) * ap1;
 
       if ((0.0 > barycentricCoords.x) || (barycentricCoords.x > 1.0) ||

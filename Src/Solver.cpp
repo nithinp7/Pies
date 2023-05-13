@@ -369,8 +369,8 @@ void Solver::tickPD(float /*timestep*/) {
     float t = 1.0f;
     for (const PointTriangleCollisionConstraint& collision :
          this->_triCollisions) {
-      if (0.9f * collision.toi <= t) {
-        t = 0.9f * collision.toi;
+      if (0.8f * collision.toi <= t) {
+        t = 0.8f * collision.toi;
       }
     }
 
@@ -643,6 +643,7 @@ void Solver::_parallelPointTriangleCollisions() {
                 continue;
               }
 
+              // TODO: This should not be used with two-sided IPC...
               if (!trianglesFacingIn(tri, *pOtherTri, nodes)) {
                 continue;
               }

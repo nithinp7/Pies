@@ -71,7 +71,10 @@ PointTriangleCollisionConstraint::PointTriangleCollisionConstraint(
     const Node& d,
     float thickness_,
     float toi_)
-    : toi(toi_), nodeIds{a.id, b.id, c.id, d.id}, n(0.0f), thickness(thickness_) {
+    : toi(toi_),
+      nodeIds{a.id, b.id, c.id, d.id},
+      n(0.0f),
+      thickness(thickness_) {
   Eigen::Matrix4f A = Eigen::Matrix4f::Zero();
   A.coeffRef(1, 0) = -1.0f;
   A.coeffRef(2, 0) = -1.0f;
@@ -82,6 +85,12 @@ PointTriangleCollisionConstraint::PointTriangleCollisionConstraint(
   A.coeffRef(3, 3) = 1.0f;
 
   this->AtA = A.transpose() * A;
+
+  // Determine which side of the triangle the point starts on
+  glm::vec3 n = glm::cross(
+      c.prevPosition - b.prevPosition,
+      d.prevPosition - b.prevPosition);
+  this->side = (glm::dot(n, a.prevPosition - b.prevPosition) >= 0.0f) ? 1.0f : -1.0f;
 }
 
 void PointTriangleCollisionConstraint::projectToAuxiliaryVariable(
@@ -102,7 +111,7 @@ void PointTriangleCollisionConstraint::projectToAuxiliaryVariable(
   glm::vec3 d = nodeD.position - nodeB.position;
   glm::vec3 p = nodeA.position - nodeB.position;
 
-  glm::vec3 n = glm::normalize(glm::cross(
+  glm::vec3 n = this->side * glm::normalize(glm::cross(
       nodeC.position - nodeB.position,
       nodeD.position - nodeB.position));
 
@@ -451,7 +460,9 @@ void EdgeCollisionConstraint::setupGlobalForceVector(
   }
 }
 
-StaticCollisionConstraint::StaticCollisionConstraint(const Node& node, float toi_)
+StaticCollisionConstraint::StaticCollisionConstraint(
+    const Node& node,
+    float toi_)
     : toi(toi_), nodeId(node.id) {}
 
 void StaticCollisionConstraint::setupCollisionMatrix(

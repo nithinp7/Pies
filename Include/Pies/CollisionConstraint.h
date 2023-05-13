@@ -34,6 +34,8 @@ struct PointTriangleCollisionConstraint {
   uint32_t nodeIds[4];
   glm::vec3 projectedPositions[4];
   glm::vec3 n;
+  float side;
+  
   // A == B
   Eigen::Matrix4f AtA;
   float thickness = 0.01f;
