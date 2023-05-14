@@ -69,13 +69,9 @@ void Solver::tickPD(float /*timestep*/) {
       constraint.setupGlobalStiffnessMatrix(this->_stiffnessMatrix);
     }
 
-    for (TetrahedralConstraint& constraint : this->_tetConstraints) {
-      constraint.setupGlobalStiffnessMatrix(this->_stiffnessMatrix);
-    }
-
-    for (VolumeConstraint& constraint : this->_volumeConstraints) {
-      constraint.setupGlobalStiffnessMatrix(this->_stiffnessMatrix);
-    }
+    // for (TetrahedralConstraint& constraint : this->_tetConstraints) {
+    //   constraint.setupGlobalStiffnessMatrix(this->_stiffnessMatrix);
+    // }
 
     for (ShapeMatchingConstraint& constraint : this->_shapeConstraints) {
       constraint.setupGlobalStiffnessMatrix(this->_stiffnessMatrix);
@@ -211,15 +207,10 @@ void Solver::tickPD(float /*timestep*/) {
           }
         }
 
-#pragma omp for
-        for (int i = 0; i < this->_volumeConstraints.size(); ++i) {
-          this->_volumeConstraints[i].projectToAuxiliaryVariable(this->_nodes);
-        }
-
-#pragma omp for
-        for (int i = 0; i < this->_tetConstraints.size(); ++i) {
-          this->_tetConstraints[i].projectToAuxiliaryVariable(this->_nodes);
-        }
+//#pragma omp for
+        // for (int i = 0; i < this->_tetConstraints.size(); ++i) {
+        //   this->_tetConstraints[i].projectToAuxiliaryVariable(this->_nodes);
+        // }
 
 // Parallelize the rest of the constraints??
 #pragma omp single
@@ -268,13 +259,10 @@ void Solver::tickPD(float /*timestep*/) {
             constraint.setupGlobalForceVector(this->_forceVector);
           }
 
-          for (TetrahedralConstraint& constraint : this->_tetConstraints) {
-            constraint.setupGlobalForceVector(this->_forceVector);
-          }
+          // for (TetrahedralConstraint& constraint : this->_tetConstraints) {
+          //   constraint.setupGlobalForceVector(this->_forceVector);
+          // }
 
-          for (VolumeConstraint& constraint : this->_volumeConstraints) {
-            constraint.setupGlobalForceVector(this->_forceVector);
-          }
           for (BendConstraint& constraint : this->_bendConstraints) {
             constraint.setupGlobalForceVector(this->_forceVector);
           }
@@ -459,7 +447,6 @@ void Solver::clear() {
   this->_nodes.clear();
   this->_distanceConstraints.clear();
   this->_tetConstraints.clear();
-  this->_volumeConstraints.clear();
   this->_shapeConstraints.clear();
   this->_goalConstraints.clear();
   this->_bendConstraints.clear();

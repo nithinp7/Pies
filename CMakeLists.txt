@@ -3,12 +3,18 @@ cmake_minimum_required(VERSION 3.24 FATAL_ERROR)
 project(
     Pies
     VERSION 0.1.0
-    LANGUAGES CXX C CUDA)
+    LANGUAGES CUDA CXX C)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
+set(CMAKE_CUDA_STANDARD 17)
 
-include_directories(Include/Pies Src Extern/eig3)
+find_package(CUDAToolkit)
+include_directories(
+    Include/Pies 
+    Src 
+    Extern/eig3 
+    ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
 
 function(glob_files out_var_name regexes)
     set(files "")
@@ -24,8 +30,13 @@ function(glob_files out_var_name regexes)
     set(${ARGV0} "${files}" PARENT_SCOPE)
 endfunction()
 
-glob_files(SRC_FILES_LIST Src/*.cpp)
+glob_files(SRC_FILES_LIST Src/*.cpp Src/*.cu)
 add_library(Pies ${SRC_FILES_LIST} Extern/eig3/eig3.cpp)
+
+set_target_properties(${PROJECT_NAME}
+  PROPERTIES
+      CUDA_SEPARABLE_COMPILATION ON
+      CUDA_RESOLVE_DEVICE_SYMBOLS ON)
 
 if (NOT TARGET glm)
   add_subdirectory(Extern/glm)
@@ -54,12 +65,10 @@ target_include_directories (Pies
       Extern/eig3
       Extern/3x3_SVD_CUDA/svd3x3)
 
-add_library(svd3x3 STATIC Extern/3x3_SVD_CUDA/svd3x3/svd3x3/kernel.cu)
-
 target_link_libraries(${PROJECT_NAME} PUBLIC OpenMP::OpenMP_CXX)
 target_link_libraries(${PROJECT_NAME} PUBLIC glm)
 target_link_libraries(${PROJECT_NAME} PUBLIC tetgen)
 target_link_libraries(${PROJECT_NAME} PUBLIC phmap)
-target_link_libraries(${PROJECT_NAME} PUBLIC svd3x3)
+target_link_libraries(${PROJECT_NAME} PRIVATE CUDA::cudart)
 
 

@@ -5,6 +5,7 @@
 #include "Node.h"
 #include "ShapeMatchingConstraint.h"
 #include "SpatialHash.h"
+#include "TetrahedralConstraintCollection.h"
 #include "Tetrahedron.h"
 #include "Triangle.h"
 
@@ -88,32 +89,6 @@ public:
   void updateFixedRegions(const std::vector<glm::mat4>& regionMatrices);
   void addLinkedRegions(const std::vector<glm::mat4>& regionsMatrices, float w);
 
-  // Utilities for spawning primitives
-  void createBox(const glm::vec3& translation, float scale, float w);
-  void createTetBox(
-      const glm::vec3& translation,
-      float scale,
-      const glm::vec3& initialVelocity,
-      float w,
-      float mass,
-      bool hinged);
-  void
-  createSheet(const glm::vec3& translation, float scale, float mass, float k);
-  void createShapeMatchingBox(
-      const glm::vec3& translation,
-      uint32_t countX,
-      uint32_t countY,
-      uint32_t countZ,
-      float scale,
-      const glm::vec3& initialVelocity,
-      float w);
-  void createShapeMatchingSheet(
-      const glm::vec3& translation,
-      float scale,
-      const glm::vec3& initialVelocity,
-      float w);
-  void createBendSheet(const glm::vec3& translation, float scale, float w);
-
 private:
   void _parallelPointTriangleCollisions();
 
@@ -125,7 +100,7 @@ private:
   struct TriCompRange {
     const std::vector<Node>& nodes;
     float threshold;
-    
+
     SpatialHashGridCellRange
     operator()(const Triangle& triangle, const SpatialHashGrid& grid) const;
   };
@@ -148,7 +123,6 @@ private:
   std::vector<PositionConstraint> _positionConstraints;
   std::vector<DistanceConstraint> _distanceConstraints;
   std::vector<TetrahedralConstraint> _tetConstraints;
-  std::vector<VolumeConstraint> _volumeConstraints;
   std::vector<ShapeMatchingConstraint> _shapeConstraints;
   std::vector<GoalMatchingConstraint> _goalConstraints;
   std::vector<BendConstraint> _bendConstraints;
