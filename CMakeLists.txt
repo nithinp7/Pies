@@ -13,8 +13,7 @@ find_package(CUDAToolkit)
 include_directories(
     Include/Pies 
     Src 
-    Extern/eig3 
-    ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
+    Extern/eig3)
 
 function(glob_files out_var_name regexes)
     set(files "")
@@ -63,12 +62,14 @@ target_include_directories (Pies
       Extern/parallel-hashmap
       Extern/eigen
       Extern/eig3
-      Extern/3x3_SVD_CUDA/svd3x3)
+      Extern/3x3_SVD_CUDA/svd3x3
+      ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
 
 target_link_libraries(${PROJECT_NAME} PUBLIC OpenMP::OpenMP_CXX)
 target_link_libraries(${PROJECT_NAME} PUBLIC glm)
 target_link_libraries(${PROJECT_NAME} PUBLIC tetgen)
 target_link_libraries(${PROJECT_NAME} PUBLIC phmap)
-target_link_libraries(${PROJECT_NAME} PRIVATE CUDA::cudart)
+target_link_libraries(${PROJECT_NAME} PUBLIC CUDA::cudart)
+target_link_libraries(${PROJECT_NAME} PUBLIC CUDA::cuda_driver)
 
 

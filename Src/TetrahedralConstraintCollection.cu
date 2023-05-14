@@ -1,10 +1,10 @@
 
+#include "Node.h"
 #include "TetrahedralConstraintCollection.h"
-
-#include <svd3x3/svd3_cuda.h>
-
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
+
+#include <svd3x3/svd3_cuda.h>
 
 #define GLM_FORCE_CUDA
 #include <glm/glm.hpp>
@@ -108,8 +108,7 @@ __global__ void projectTets(
   }
 
   // The "fixed" deformation gradient
-  Eigen::Matrix3f Fhat =
-      U * singularValues.asDiagonal() * V.transpose();
+  Eigen::Matrix3f Fhat = U * singularValues.asDiagonal() * V.transpose();
 
   Eigen::Matrix<float, 4, 3> P1 = Eigen::Matrix<float, 4, 3>::Zero();
   // TODO: Fhat.transpose()???
@@ -176,7 +175,7 @@ TetrahedralConstraint::TetrahedralConstraint(
   // B is identity
 
   this->Qinv = diffToBary;
-  this->AtB = A;
+  this->AtB = A.transpose();
 }
 
 TetrahedralConstraintCollection::TetrahedralConstraintCollection(
@@ -188,7 +187,7 @@ TetrahedralConstraintCollection::TetrahedralConstraintCollection(
 
   for (const TetrahedralConstraint& tet : this->_tets) {
     // B is identity here
-    Eigen::Matrix<float, 4, 4> AtA = tet.AtB.transpose() * tet.AtB;
+    Eigen::Matrix<float, 4, 4> AtA = tet.AtB * tet.AtB.transpose();
     for (int i = 0; i < 4; ++i) {
       int nodeId_i = tet.nodeIds[i];
       for (int j = 0; j < 4; ++j) {
@@ -214,13 +213,45 @@ TetrahedralConstraintCollection::TetrahedralConstraintCollection(
       sizeof(Eigen::Matrix<float, 4, 3>) * this->_tets.size());
 }
 
+TetrahedralConstraintCollection::TetrahedralConstraintCollection(
+    TetrahedralConstraintCollection&& rhs)
+    : _tets(std::move(rhs._tets)),
+      _dev_tets(rhs._dev_tets),
+      _dev_wAtBp(rhs._dev_wAtBp),
+      _wAtBp(std::move(rhs._wAtBp)) {
+  rhs._dev_tets = nullptr;
+  rhs._dev_wAtBp = nullptr;
+}
+
+TetrahedralConstraintCollection& TetrahedralConstraintCollection::operator=(
+    TetrahedralConstraintCollection&& rhs) {
+  this->_tets = std::move(rhs._tets);
+  this->_dev_tets = rhs._dev_tets;
+  this->_dev_wAtBp = rhs._dev_wAtBp;
+  this->_wAtBp = std::move(rhs._wAtBp);
+
+  rhs._dev_tets = nullptr;
+  rhs._dev_wAtBp = nullptr;
+
+  return *this;
+}
+
 TetrahedralConstraintCollection::~TetrahedralConstraintCollection() {
-  cudaFree(this->_dev_tets);
-  cudaFree(this->_dev_wAtBp);
+  if (this->_dev_tets) {
+    cudaFree(this->_dev_tets);
+  }
+
+  if (this->_dev_wAtBp) {
+    cudaFree(this->_dev_wAtBp);
+  }
 }
 
 void TetrahedralConstraintCollection::project(glm::vec3* devNodePositions) {
   int tetCount = static_cast<int>(this->_tets.size());
+
+  if (tetCount == 0) {
+    return;
+  }
 
   int threadCount = 504;
   int pblks = int((tetCount + threadCount - 1) / threadCount);

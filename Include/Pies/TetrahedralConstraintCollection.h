@@ -9,7 +9,11 @@
 #include <vector>
 
 namespace Pies {
-struct TetrahedralConstraint {
+struct alignas(16) TetrahedralConstraint {
+  // TODO: Can we avoid making A specific to each tet's rest pose?
+  Eigen::Matrix<float, 4, 4> AtB;
+  glm::mat3 Qinv;
+
   int nodeIds[4];
 
   float w;
@@ -17,10 +21,6 @@ struct TetrahedralConstraint {
   float maxStrain;
   float minOmega;
   float maxOmega;
-
-  // TODO: Can we avoid making A specific to each tet's rest pose?
-  Eigen::Matrix<float, 4, 4> AtB;
-  glm::mat3 Qinv;
 
   TetrahedralConstraint(
       const Node& a,
@@ -36,15 +36,19 @@ struct TetrahedralConstraint {
 
 class TetrahedralConstraintCollection {
 public:
+  TetrahedralConstraintCollection() = default;
   TetrahedralConstraintCollection(
-      std::vector<TetrahedralConstraint>&& tetConstraints, 
+      std::vector<TetrahedralConstraint>&& tetConstraints,
       Eigen::SparseMatrix<float>& systemMatrix);
   ~TetrahedralConstraintCollection();
 
+  TetrahedralConstraintCollection(TetrahedralConstraintCollection&& rhs);
+  TetrahedralConstraintCollection&
+  operator=(TetrahedralConstraintCollection&& rhs);
   TetrahedralConstraintCollection(const TetrahedralConstraintCollection& rhs) =
       delete;
-  TetrahedralConstraintCollection(TetrahedralConstraintCollection&& rhs) =
-      delete;
+  TetrahedralConstraintCollection&
+  operator=(const TetrahedralConstraintCollection& rhs) = delete;
 
   void project(glm::vec3* devNodePositions);
 
@@ -57,7 +61,7 @@ private:
 
   // SHARED CUDA RESOURCES:
   // Stacked buffer of tetrahedral constraint structs, set once at the beginning
-  TetrahedralConstraint* _dev_tets;
+  TetrahedralConstraint* _dev_tets = nullptr;
 
   // TODO: Remove
   // Stacked buffer of individual SVD results, each tet constraint will
@@ -69,7 +73,7 @@ private:
   // This is a little obfuscated to understand from the code, but this is a
   // quantity needed for the serial global force vector setup in PD. Everything
   // up until this quantity can be done in parallel.
-  Eigen::Matrix<float, 4, 3>* _dev_wAtBp;
+  Eigen::Matrix<float, 4, 3>* _dev_wAtBp = nullptr;
   std::vector<Eigen::Matrix<float, 4, 3>> _wAtBp;
 };
 } // namespace Pies

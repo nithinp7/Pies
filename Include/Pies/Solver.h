@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cuda.h>
+
 #include "CollisionConstraint.h"
 #include "Constraints.h"
 #include "Node.h"
@@ -8,6 +10,7 @@
 #include "TetrahedralConstraintCollection.h"
 #include "Tetrahedron.h"
 #include "Triangle.h"
+#include "DevicePositions.h"
 
 #include <Eigen/Core>
 #include <Eigen/SparseCholesky>
@@ -116,6 +119,11 @@ private:
     glm::mat4 invInitialTransform{};
     uint32_t goalMatchingConstraint{};
   };
+
+  // CUDA Resources
+  CUcontext _cudaContext;
+  DevicePositions _devicePositions;
+  TetrahedralConstraintCollection _tetCollection;
 
   std::vector<Node> _nodes;
   std::vector<Tetrahedron> _tets;

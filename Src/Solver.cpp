@@ -22,12 +22,23 @@ Solver::Solver(const SolverOptions& options)
   Eigen::setNbThreads(options.threadCount);
 
   this->_threadData.resize(options.threadCount);
+  // TODO: Eventually implement persistent threaded cuda context...
+  // See:
+  // https://www.nvidia.com.tw/content/apacevents/siggraph-asia-2012/developing-an-optimized-maya-plugin-using-cuda-and-opengl-WBraithwaite.pdf
+  CUdevice dev;
+  // TODO: Double check this is picking the discrete GPU
+  cuDeviceGet(&dev, 0);
+  cuCtxCreate(&this->_cudaContext, 0, dev);
+  cuCtxPopCurrent(0);
 }
 
 Solver::~Solver() {
   if (this->_clearSpatialHashThread.joinable()) {
     this->_clearSpatialHashThread.join();
   }
+
+  cuCtxPushCurrent(this->_cudaContext);
+  cuCtxDestroy(this->_cudaContext);
 }
 
 void Solver::tick(float timestep) {
@@ -43,10 +54,14 @@ void Solver::tick(float timestep) {
 }
 
 void Solver::tickPD(float /*timestep*/) {
+  cuCtxPushCurrent(this->_cudaContext);
+
   uint32_t nodeCount = static_cast<uint32_t>(this->_nodes.size());
 
   if (this->_previousNodeCount != nodeCount) {
     this->_previousNodeCount = nodeCount;
+
+    this->_devicePositions = DevicePositions(nodeCount);
 
     // TODO: Make smart factorization updates instead of re-running the
     // precomputation
@@ -84,6 +99,11 @@ void Solver::tickPD(float /*timestep*/) {
     for (BendConstraint& constraint : this->_bendConstraints) {
       constraint.setupGlobalStiffnessMatrix(this->_stiffnessMatrix);
     }
+
+    this->_tetCollection = TetrahedralConstraintCollection(
+        std::move(this->_tetConstraints),
+        this->_stiffnessMatrix);
+    this->_tetConstraints.clear();
 
     // Perform Sparse Cholesky LLT factorization
     this->_pLltDecomp =
@@ -127,6 +147,8 @@ void Solver::tickPD(float /*timestep*/) {
       this->_parallelPointTriangleCollisions();
     }
 
+    this->_devicePositions.upload(this->_nodes);
+
     // this->_collisionMatrix.setZero();
     this->_stiffnessAndCollisionMatrix.setZero();
 
@@ -151,34 +173,6 @@ void Solver::tickPD(float /*timestep*/) {
 
     this->_stiffnessAndCollisionMatrix =
         this->_stiffnessMatrix + this->_collisionMatrix;
-
-    // Truncate time-step to just before earliest collision
-    // TODO: Do this for static collisions too...
-    // float t = 1.0f;
-    // for (const PointTriangleCollisionConstraint& collision :
-    //      this->_triCollisions) {
-    //   if (collision.toi <= t) {
-    //     t = 0.9f * collision.toi;
-    //   }
-    // }
-
-    // // TODO: Add proper barrier potential to avoid this
-    // t = glm::max(t, 0.001f);
-
-    // h = t * h;
-    // h2 = h * h;
-    // timeLeft -= h;
-
-    // for (uint32_t i = 0; i < nodeCount; ++i) {
-    //   Node& node = this->_nodes[i];
-    //   // Construct momentum estimate for qn+1
-    //   node.position = glm::mix(node.prevPosition, node.position, t);
-
-    //   glm::vec3 Msn_h2 = node.position / node.invMass / h2;
-    //   this->_Msn_h2.coeffRef(i, 0) = Msn_h2.x;
-    //   this->_Msn_h2.coeffRef(i, 1) = Msn_h2.y;
-    //   this->_Msn_h2.coeffRef(i, 2) = Msn_h2.z;
-    // }
 
     for (uint32_t i = 0; i < nodeCount; ++i) {
       this->_stiffnessAndCollisionMatrix.coeffRef(i, i) +=
@@ -207,10 +201,15 @@ void Solver::tickPD(float /*timestep*/) {
           }
         }
 
-//#pragma omp for
-        // for (int i = 0; i < this->_tetConstraints.size(); ++i) {
-        //   this->_tetConstraints[i].projectToAuxiliaryVariable(this->_nodes);
-        // }
+// #pragma omp for
+//  for (int i = 0; i < this->_tetConstraints.size(); ++i) {
+//    this->_tetConstraints[i].projectToAuxiliaryVariable(this->_nodes);
+//  }
+#pragma omp single
+        {
+          this->_tetCollection.project(
+              this->_devicePositions.getDeviceBuffer());
+        }
 
 // Parallelize the rest of the constraints??
 #pragma omp single
@@ -262,6 +261,7 @@ void Solver::tickPD(float /*timestep*/) {
           // for (TetrahedralConstraint& constraint : this->_tetConstraints) {
           //   constraint.setupGlobalForceVector(this->_forceVector);
           // }
+          this->_tetCollection.setupGlobalForceVector(this->_forceVector);
 
           for (BendConstraint& constraint : this->_bendConstraints) {
             constraint.setupGlobalForceVector(this->_forceVector);
@@ -438,6 +438,8 @@ void Solver::tickPD(float /*timestep*/) {
 
       node.velocity += -friction * perpVel;
     }
+
+    cuCtxPopCurrent(0);
   }
 } // namespace Pies
 
