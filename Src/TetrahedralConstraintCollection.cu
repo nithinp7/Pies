@@ -15,15 +15,12 @@
 __global__ void projectTets(
     Pies::TetrahedralConstraint* devTets,
     glm::vec3* devNodePositions,
-    Eigen::Matrix<float, 4, 3>* wAtBp,
+    glm::mat3x4* wAtBp,
     int tetCount) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   if (i >= tetCount) {
     return;
   }
-
-  // TODO: Avoid the awkward switching back and forth between
-  // Eigen and glm here
 
   const Pies::TetrahedralConstraint& tet = devTets[i];
 
@@ -35,15 +32,11 @@ __global__ void projectTets(
   glm::mat3 P(x2 - x1, x3 - x1, x4 - x1);
 
   // Deformation gradient
-  glm::mat3 F = P * tet.Qinv;
+  glm::mat3 F = glm::transpose(P * tet.Qinv);
 
-  Eigen::Matrix3f F_;
-  F_ << F[0][0], F[0][1], F[0][2], F[1][0], F[1][1], F[1][2], F[2][0], F[2][1],
-      F[2][2];
-
-  Eigen::Matrix3f U;
-  Eigen::Vector3f singularValues;
-  Eigen::Matrix3f V;
+  glm::mat3 U(0.0f);
+  glm::vec3 sigma(0.0f);
+  glm::mat3 V(0.0f);
 
   svd(
       // Remember glm is stored column major
@@ -56,29 +49,27 @@ __global__ void projectTets(
       F[0][2],
       F[1][2],
       F[2][2],
-      U.coeffRef(0, 0),
-      U.coeffRef(0, 1),
-      U.coeffRef(0, 2),
-      U.coeffRef(1, 0),
-      U.coeffRef(1, 1),
-      U.coeffRef(1, 2),
-      U.coeffRef(2, 0),
-      U.coeffRef(2, 1),
-      U.coeffRef(2, 2),
-      singularValues[0],
-      singularValues[1],
-      singularValues[2],
-      V.coeffRef(0, 0),
-      V.coeffRef(0, 1),
-      V.coeffRef(0, 2),
-      V.coeffRef(1, 0),
-      V.coeffRef(1, 1),
-      V.coeffRef(1, 2),
-      V.coeffRef(2, 0),
-      V.coeffRef(2, 1),
-      V.coeffRef(2, 2));
-
-  glm::vec3 sigma(singularValues[0], singularValues[1], singularValues[2]);
+      U[0][0],
+      U[1][0],
+      U[2][0],
+      U[0][1],
+      U[1][1],
+      U[2][1],
+      U[0][2],
+      U[1][2],
+      U[2][2],
+      sigma[0],
+      sigma[1],
+      sigma[2],
+      V[0][0],
+      V[1][0],
+      V[2][0],
+      V[0][1],
+      V[1][1],
+      V[2][1],
+      V[0][2],
+      V[1][2],
+      V[2][2]);
 
   const uint32_t COMP_D_ITERS = 10;
   glm::vec3 D(0.0f);
@@ -94,25 +85,33 @@ __global__ void projectTets(
     D = (glm::dot(gradC, D) - C) * gradC / glm::dot(gradC, gradC);
   }
 
-  singularValues[0] += D.x;
-  singularValues[1] += D.y;
-  singularValues[2] += D.z;
+  sigma += D;
 
   for (uint32_t i = 0; i < 3; ++i) {
-    singularValues[i] =
-        glm::clamp(singularValues[i], tet.minStrain, tet.maxStrain);
+    sigma[i] = glm::clamp(sigma[i], tet.minStrain, tet.maxStrain);
   }
 
   if (glm::determinant(F) < 0.0f) {
-    singularValues[2] *= -1.0f;
+    sigma[2] *= -1.0f;
   }
 
   // The "fixed" deformation gradient
-  Eigen::Matrix3f Fhat = U * singularValues.asDiagonal() * V.transpose();
+  glm::mat3
+      sigma_(sigma.x, 0.0f, 0.0f, 0.0f, sigma.y, 0.0f, 0.0f, 0.0f, sigma.z);
+  glm::mat3 Fhat = U * sigma_ * glm::transpose(V);
 
-  Eigen::Matrix<float, 4, 3> P1 = Eigen::Matrix<float, 4, 3>::Zero();
-  // TODO: Fhat.transpose()???
-  P1.block(1, 0, 3, 3) = Fhat;
+  glm::mat3x4 P1(0.0f);
+  P1[0][1] = Fhat[0][0];
+  P1[1][1] = Fhat[1][0];
+  P1[2][1] = Fhat[2][0];
+
+  P1[0][2] = Fhat[0][1];
+  P1[1][2] = Fhat[1][1];
+  P1[2][2] = Fhat[2][1];
+
+  P1[0][3] = Fhat[0][2];
+  P1[1][3] = Fhat[1][2];
+  P1[2][3] = Fhat[2][2];
 
   wAtBp[i] = tet.w * tet.AtB * P1;
 }
@@ -136,46 +135,32 @@ TetrahedralConstraint::TetrahedralConstraint(
       maxOmega(maxOmega_) {
 
   // Converts world positions to differential coords
-  Eigen::Matrix<float, 3, 4> worldToDiff = Eigen::Matrix<float, 3, 4>::Zero();
-  worldToDiff.coeffRef(0, 0) = -1.0f;
-  worldToDiff.coeffRef(1, 0) = -1.0f;
-  worldToDiff.coeffRef(2, 0) = -1.0f;
+  glm::mat4x3 worldToDiff(0.0f);
+  worldToDiff[0][0] = -1.0f;
+  worldToDiff[0][1] = -1.0f;
+  worldToDiff[0][2] = -1.0f;
 
-  worldToDiff.coeffRef(0, 1) = 1.0f;
-  worldToDiff.coeffRef(1, 2) = 1.0f;
-  worldToDiff.coeffRef(2, 3) = 1.0f;
+  worldToDiff[1][0] = 1.0f;
+  worldToDiff[2][1] = 1.0f;
+  worldToDiff[3][2] = 1.0f;
 
   // Converts barycentric coords to world differential cords
   glm::mat3 baryToDiff(
       b.position - a.position,
       c.position - a.position,
       d.position - a.position);
-  glm::mat3 diffToBary = glm::inverse(baryToDiff);
+  this->Qinv = glm::inverse(baryToDiff);
 
-  Eigen::Matrix3f diffToBary_;
-  diffToBary_ << diffToBary[0][0], diffToBary[0][1], diffToBary[0][2],
-      diffToBary[1][0], diffToBary[1][1], diffToBary[1][2], diffToBary[2][0],
-      diffToBary[2][1], diffToBary[2][2];
-
-  Eigen::Matrix<float, 3, 4> A_ = diffToBary_ * worldToDiff;
-  Eigen::Matrix4f A = Eigen::Matrix4f::Zero();
-  // A.coeffRef(1, 0) = -1.0f;
-  // A.coeffRef(2, 0) = -1.0f;
-  // A.coeffRef(3, 0) = -1.0f;
-
-  // A.coeffRef(1, 1) = 1.0f;
-  // A.coeffRef(2, 2) = 1.0f;
-  // A.coeffRef(3, 3) = 1.0f;
-
-  A.row(0) << 0.0f, 0.0f, 0.0f, 0.0f;
-  A.row(1) = A_.row(0);
-  A.row(2) = A_.row(1);
-  A.row(3) = A_.row(2);
-
-  // B is identity
-
-  this->Qinv = diffToBary;
-  this->AtB = A.transpose();
+  // TODO: Simplify??
+  glm::mat3x4 At = glm::transpose(glm::transpose(this->Qinv) * worldToDiff);
+  // Add empty row corresponding to the first row since its differential
+  // coord is always 0 (can we just ignore this?)
+  // Note: Be careful about the column/row indices if changing this in the
+  // future.
+  this->AtB = glm::mat4(0.0f);
+  this->AtB[1] = At[0];
+  this->AtB[2] = At[1];
+  this->AtB[3] = At[2];
 }
 
 TetrahedralConstraintCollection::TetrahedralConstraintCollection(
@@ -187,12 +172,12 @@ TetrahedralConstraintCollection::TetrahedralConstraintCollection(
 
   for (const TetrahedralConstraint& tet : this->_tets) {
     // B is identity here
-    Eigen::Matrix<float, 4, 4> AtA = tet.AtB * tet.AtB.transpose();
+    glm::mat4 AtA = tet.AtB * glm::transpose(tet.AtB);
     for (int i = 0; i < 4; ++i) {
       int nodeId_i = tet.nodeIds[i];
       for (int j = 0; j < 4; ++j) {
         int nodeId_j = tet.nodeIds[j];
-        systemMatrix.coeffRef(nodeId_i, nodeId_j) += tet.w * AtA.coeff(i, j);
+        systemMatrix.coeffRef(nodeId_i, nodeId_j) += tet.w * AtA[j][i];
       }
     }
   }
@@ -208,9 +193,7 @@ TetrahedralConstraintCollection::TetrahedralConstraintCollection(
       cudaMemcpyHostToDevice);
 
   // Create device memory to hold the projection output.
-  cudaMalloc(
-      &this->_dev_wAtBp,
-      sizeof(Eigen::Matrix<float, 4, 3>) * this->_tets.size());
+  cudaMalloc(&this->_dev_wAtBp, sizeof(glm::mat3x4) * this->_tets.size());
 }
 
 TetrahedralConstraintCollection::TetrahedralConstraintCollection(
@@ -253,7 +236,7 @@ void TetrahedralConstraintCollection::project(glm::vec3* devNodePositions) {
     return;
   }
 
-  int threadCount = 504;
+  int threadCount = 256;
   int pblks = int((tetCount + threadCount - 1) / threadCount);
   projectTets<<<pblks, threadCount>>>(
       this->_dev_tets,
@@ -264,7 +247,7 @@ void TetrahedralConstraintCollection::project(glm::vec3* devNodePositions) {
   cudaMemcpy(
       this->_wAtBp.data(),
       this->_dev_wAtBp,
-      sizeof(Eigen::Matrix<float, 4, 3>) * this->_tets.size(),
+      sizeof(glm::mat3x4) * this->_tets.size(),
       cudaMemcpyDeviceToHost);
 }
 
@@ -272,12 +255,12 @@ void TetrahedralConstraintCollection::setupGlobalForceVector(
     Eigen::MatrixXf& forceVector) const {
   for (size_t tetId = 0; tetId < this->_tets.size(); ++tetId) {
     const TetrahedralConstraint& tet = this->_tets[tetId];
-    const Eigen::Matrix<float, 4, 3>& wAtBp = this->_wAtBp[tetId];
+    const glm::mat3x4& wAtBp = this->_wAtBp[tetId];
     for (uint32_t i = 0; i < 4; ++i) {
       uint32_t nodeId_i = tet.nodeIds[i];
-      forceVector.coeffRef(nodeId_i, 0) += wAtBp.coeff(i, 0);
-      forceVector.coeffRef(nodeId_i, 1) += wAtBp.coeff(i, 1);
-      forceVector.coeffRef(nodeId_i, 2) += wAtBp.coeff(i, 2);
+      forceVector.coeffRef(nodeId_i, 0) += wAtBp[0][i];
+      forceVector.coeffRef(nodeId_i, 1) += wAtBp[1][i];
+      forceVector.coeffRef(nodeId_i, 2) += wAtBp[2][i];
     }
   }
 }

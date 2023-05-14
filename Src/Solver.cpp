@@ -37,6 +37,9 @@ Solver::~Solver() {
     this->_clearSpatialHashThread.join();
   }
 
+  this->_devicePositions = {};
+  this->_tetCollection = {};
+
   cuCtxPushCurrent(this->_cudaContext);
   cuCtxDestroy(this->_cudaContext);
 }
@@ -147,8 +150,6 @@ void Solver::tickPD(float /*timestep*/) {
       this->_parallelPointTriangleCollisions();
     }
 
-    this->_devicePositions.upload(this->_nodes);
-
     // this->_collisionMatrix.setZero();
     this->_stiffnessAndCollisionMatrix.setZero();
 
@@ -207,6 +208,7 @@ void Solver::tickPD(float /*timestep*/) {
 //  }
 #pragma omp single
         {
+          this->_devicePositions.upload(this->_nodes);
           this->_tetCollection.project(
               this->_devicePositions.getDeviceBuffer());
         }

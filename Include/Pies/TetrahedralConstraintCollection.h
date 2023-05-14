@@ -11,7 +11,7 @@
 namespace Pies {
 struct alignas(16) TetrahedralConstraint {
   // TODO: Can we avoid making A specific to each tet's rest pose?
-  Eigen::Matrix<float, 4, 4> AtB;
+  glm::mat4 AtB;
   glm::mat3 Qinv;
 
   int nodeIds[4];
@@ -63,17 +63,12 @@ private:
   // Stacked buffer of tetrahedral constraint structs, set once at the beginning
   TetrahedralConstraint* _dev_tets = nullptr;
 
-  // TODO: Remove
-  // Stacked buffer of individual SVD results, each tet constraint will
-  // correspond to 21 floats representing 3x3 matrix U (9 floats), vec3 S (3
-  // floats), and 3x3 matrix V (9 floats). The matrices are in row-major order.
-  // float* svdOut = nullp;
-
   // Stacked buffer of the result of the projection
   // This is a little obfuscated to understand from the code, but this is a
   // quantity needed for the serial global force vector setup in PD. Everything
   // up until this quantity can be done in parallel.
-  Eigen::Matrix<float, 4, 3>* _dev_wAtBp = nullptr;
-  std::vector<Eigen::Matrix<float, 4, 3>> _wAtBp;
+  // Note: These are 4(rows)x3(cols) matrices.
+  glm::mat3x4* _dev_wAtBp = nullptr;
+  std::vector<glm::mat3x4> _wAtBp;
 };
 } // namespace Pies
