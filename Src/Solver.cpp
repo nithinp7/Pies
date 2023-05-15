@@ -620,9 +620,9 @@ void Solver::_parallelPointTriangleCollisions() {
               }
 
               // TODO: This should not be used with two-sided IPC...
-              if (!trianglesFacingIn(tri, *pOtherTri, nodes)) {
-                continue;
-              }
+              // if (!trianglesFacingIn(tri, *pOtherTri, nodes)) {
+              //   continue;
+              // }
 
               const Node& nodeB = nodes[pOtherTri->nodeIds[0]];
               const Node& nodeC = nodes[pOtherTri->nodeIds[1]];
