@@ -13,3 +13,6 @@
 [submodule "Extern/3x3_SVD_CUDA"]
 	path = Extern/3x3_SVD_CUDA
 	url = git@github.com:nithinp7/3x3_SVD_CUDA.git
+[submodule "Extern/tbtSVD"]
+	path = Extern/tbtSVD
+	url = git@github.com:wi-re/tbtSVD.git

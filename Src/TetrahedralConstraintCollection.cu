@@ -4,7 +4,8 @@
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 
-#include <svd3x3/svd3_cuda.h>
+// #include <svd3x3/svd3_cuda.h>
+#include <SVD.h>
 
 #define GLM_FORCE_CUDA
 #include <glm/glm.hpp>
@@ -34,12 +35,7 @@ __global__ void projectTets(
   // Deformation gradient
   glm::mat3 F = glm::transpose(P * tet.Qinv);
 
-  glm::mat3 U(0.0f);
-  glm::vec3 sigma(0.0f);
-  glm::mat3 V(0.0f);
-
-  svd(
-      // Remember glm is stored column major
+  SVD::Mat3x3 F_(
       F[0][0],
       F[1][0],
       F[2][0],
@@ -48,50 +44,77 @@ __global__ void projectTets(
       F[2][1],
       F[0][2],
       F[1][2],
-      F[2][2],
-      U[0][0],
-      U[1][0],
-      U[2][0],
-      U[0][1],
-      U[1][1],
-      U[2][1],
-      U[0][2],
-      U[1][2],
-      U[2][2],
-      sigma[0],
-      sigma[1],
-      sigma[2],
-      V[0][0],
-      V[1][0],
-      V[2][0],
-      V[0][1],
-      V[1][1],
-      V[2][1],
-      V[0][2],
-      V[1][2],
-      V[2][2]);
+      F[2][2]);
+  SVD::SVDSet svdRes = SVD::svd(F_);
+  
+  glm::mat3 U(
+      svdRes.U.m_00, svdRes.U.m_10, svdRes.U.m_20, 
+      svdRes.U.m_01, svdRes.U.m_11, svdRes.U.m_21, 
+      svdRes.U.m_02, svdRes.U.m_12, svdRes.U.m_22); 
+  glm::vec3 sigma(svdRes.S.m_00, svdRes.S.m_11, svdRes.V.m_22);
+  glm::mat3 V(
+      svdRes.V.m_00, svdRes.V.m_10, svdRes.V.m_20, 
+      svdRes.V.m_01, svdRes.V.m_11, svdRes.V.m_21, 
+      svdRes.V.m_02, svdRes.V.m_12, svdRes.V.m_22); 
 
-  //const uint32_t COMP_D_ITERS = 10;
-  //glm::vec3 D(0.0f);
-  //for (uint32_t i = 0; i < COMP_D_ITERS; ++i) {
-  //  glm::vec3 sigmaPlusD = sigma + D;
-  //  float product = sigmaPlusD.x * sigmaPlusD.y * sigmaPlusD.z;
-  //  float omega = glm::clamp(product, tet.minOmega, tet.maxOmega);
-  //  float C = product - omega;
-  //  glm::vec3 gradC(
-  //      sigmaPlusD.y * sigmaPlusD.z,
-  //      sigmaPlusD.x * sigmaPlusD.z,
-  //      sigmaPlusD.x * sigmaPlusD.y);
-  //  D = (glm::dot(gradC, D) - C) * gradC / glm::dot(gradC, gradC);
-  //}
+  // glm::mat3 U(0.0f);
+  // glm::vec3 sigma(0.0f);
+  // glm::mat3 V(0.0f);
 
-  //sigma += D;
+  // svd(
+  //     // Remember glm is stored column major
+  //     F[0][0],
+  //     F[1][0],
+  //     F[2][0],
+  //     F[0][1],
+  //     F[1][1],
+  //     F[2][1],
+  //     F[0][2],
+  //     F[1][2],
+  //     F[2][2],
+  //     U[0][0],
+  //     U[1][0],
+  //     U[2][0],
+  //     U[0][1],
+  //     U[1][1],
+  //     U[2][1],
+  //     U[0][2],
+  //     U[1][2],
+  //     U[2][2],
+  //     sigma[0],
+  //     sigma[1],
+  //     sigma[2],
+  //     V[0][0],
+  //     V[1][0],
+  //     V[2][0],
+  //     V[0][1],
+  //     V[1][1],
+  //     V[2][1],
+  //     V[0][2],
+  //     V[1][2],
+  //     V[2][2]);
 
   sigma = glm::clamp(sigma, tet.minStrain, tet.maxStrain);
 
   if (glm::determinant(F) < 0.0f) {
     sigma[2] *= -1.0f;
   }
+
+  const uint32_t COMP_D_ITERS = 10;
+  glm::vec3 D(0.0f);
+  for (uint32_t i = 0; i < COMP_D_ITERS; ++i) {
+    glm::vec3 sigmaPlusD = sigma + D;
+    float product = sigmaPlusD.x * sigmaPlusD.y * sigmaPlusD.z;
+    float omega = glm::clamp(product, tet.minOmega, tet.maxOmega);
+    float C = product - omega;
+    glm::vec3 gradC(
+        sigmaPlusD.y * sigmaPlusD.z,
+        sigmaPlusD.x * sigmaPlusD.z,
+        sigmaPlusD.x * sigmaPlusD.y);
+    D = (glm::dot(gradC, D) - C) * gradC / glm::dot(gradC, gradC);
+  }
+
+  sigma += D;
 
   // The "fixed" deformation gradient
   glm::mat3
@@ -198,8 +221,7 @@ TetrahedralConstraintCollection::TetrahedralConstraintCollection(
 
 TetrahedralConstraintCollection::TetrahedralConstraintCollection(
     TetrahedralConstraintCollection&& rhs)
-    : _tets(std::move(rhs._tets)),
-      _wAtBp(std::move(rhs._wAtBp)) {
+    : _tets(std::move(rhs._tets)), _wAtBp(std::move(rhs._wAtBp)) {
   if (this->_dev_tets) {
     cudaFree(this->_dev_tets);
   }

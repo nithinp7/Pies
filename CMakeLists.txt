@@ -64,6 +64,7 @@ target_include_directories (Pies
       Extern/eigen
       Extern/eig3
       Extern/3x3_SVD_CUDA/svd3x3
+      Extern/tbtSVD/source
       ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
 
 target_link_libraries(${PROJECT_NAME} PUBLIC OpenMP::OpenMP_CXX)
