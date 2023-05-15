@@ -1,7 +1,5 @@
 #pragma once
 
-#include "Node.h"
-
 #include <Eigen/Core>
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
@@ -9,6 +7,8 @@
 #include <vector>
 
 namespace Pies {
+struct Node;
+
 struct alignas(16) TetrahedralConstraint {
   // TODO: Can we avoid making A specific to each tet's rest pose?
   glm::mat4 AtB;

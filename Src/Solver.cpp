@@ -22,14 +22,6 @@ Solver::Solver(const SolverOptions& options)
   Eigen::setNbThreads(options.threadCount);
 
   this->_threadData.resize(options.threadCount);
-  // TODO: Eventually implement persistent threaded cuda context...
-  // See:
-  // https://www.nvidia.com.tw/content/apacevents/siggraph-asia-2012/developing-an-optimized-maya-plugin-using-cuda-and-opengl-WBraithwaite.pdf
-  CUdevice dev;
-  // TODO: Double check this is picking the discrete GPU
-  cuDeviceGet(&dev, 0);
-  cuCtxCreate(&this->_cudaContext, 0, dev);
-  cuCtxPopCurrent(0);
 }
 
 Solver::~Solver() {
@@ -39,9 +31,6 @@ Solver::~Solver() {
 
   this->_devicePositions = {};
   this->_tetCollection = {};
-
-  cuCtxPushCurrent(this->_cudaContext);
-  cuCtxDestroy(this->_cudaContext);
 }
 
 void Solver::tick(float timestep) {
@@ -57,8 +46,6 @@ void Solver::tick(float timestep) {
 }
 
 void Solver::tickPD(float /*timestep*/) {
-  cuCtxPushCurrent(this->_cudaContext);
-
   uint32_t nodeCount = static_cast<uint32_t>(this->_nodes.size());
 
   if (this->_previousNodeCount != nodeCount) {
@@ -404,7 +391,7 @@ void Solver::tickPD(float /*timestep*/) {
 
       glm::vec3 avgTriVelocity = (b.velocity + c.velocity + d.velocity) / 3.0f;
 
-      glm::vec3 n = glm::normalize(
+      glm::vec3 n = collision.side * glm::normalize(
           glm::cross(c.position - b.position, d.position - b.position));
 
       glm::vec3 relativeVelocity = a.velocity - avgTriVelocity;
@@ -440,8 +427,6 @@ void Solver::tickPD(float /*timestep*/) {
 
       node.velocity += -friction * perpVel;
     }
-
-    cuCtxPopCurrent(0);
   }
 } // namespace Pies
 
@@ -730,8 +715,6 @@ void Solver::_parallelPointTriangleCollisions() {
 
     for (const PointTriangleCollisionConstraint& collision :
          data.triCollisions) {
-      // collision.setupGlobalForceVector(this->_forceVector);
-      // collision.setupCollisionMatrix(this->_collisionMatrix);
       this->_triCollisions.push_back(collision);
     }
 
@@ -740,8 +723,6 @@ void Solver::_parallelPointTriangleCollisions() {
     }
 
     for (const StaticCollisionConstraint& collision : data.staticCollisions) {
-      // collision.setupCollisionMatrix(this->_collisionMatrix);
-      // collision.setupGlobalForceVector(this->_forceVector);
       this->_staticCollisions.push_back(collision);
     }
   }

@@ -121,7 +121,6 @@ private:
   };
 
   // CUDA Resources
-  CUcontext _cudaContext;
   DevicePositions _devicePositions;
   TetrahedralConstraintCollection _tetCollection;
 

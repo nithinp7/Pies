@@ -11,15 +11,16 @@ DevicePositions::DevicePositions(size_t count)
   : _count(count) {
   this->_scratch.resize(count);
   cudaError_t err = cudaMalloc(&this->_devPositions, sizeof(glm::vec3) * count);
-  if (err != cudaError::cudaSuccess) {
-    this->_count = 0;
-  }
+  
+  cudaDeviceSynchronize();
 }
 
 DevicePositions::~DevicePositions() {
   if (this->_devPositions) {
     cudaFree(this->_devPositions);
   }
+
+  cudaDeviceSynchronize();
 }
 
 DevicePositions::DevicePositions(DevicePositions&& rhs) 
@@ -52,5 +53,7 @@ void DevicePositions::upload(const std::vector<Node>& nodes) {
   }
 
   cudaMemcpy(this->_devPositions, this->_scratch.data(), sizeof(glm::vec3) * this->_count, cudaMemcpyHostToDevice);
+  
+  cudaDeviceSynchronize();
 }
 } // namespace Pies

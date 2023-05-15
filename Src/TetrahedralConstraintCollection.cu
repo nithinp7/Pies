@@ -17,12 +17,12 @@ __global__ void projectTets(
     glm::vec3* devNodePositions,
     glm::mat3x4* wAtBp,
     int tetCount) {
-  int i = blockIdx.x * blockDim.x + threadIdx.x;
-  if (i >= tetCount) {
+  int index = blockIdx.x * blockDim.x + threadIdx.x;
+  if (index >= tetCount) {
     return;
   }
 
-  const Pies::TetrahedralConstraint& tet = devTets[i];
+  const Pies::TetrahedralConstraint& tet = devTets[index];
 
   const glm::vec3& x1 = devNodePositions[tet.nodeIds[0]];
   const glm::vec3& x2 = devNodePositions[tet.nodeIds[1]];
@@ -71,25 +71,23 @@ __global__ void projectTets(
       V[1][2],
       V[2][2]);
 
-  const uint32_t COMP_D_ITERS = 10;
-  glm::vec3 D(0.0f);
-  for (uint32_t i = 0; i < COMP_D_ITERS; ++i) {
-    glm::vec3 sigmaPlusD = sigma + D;
-    float product = sigmaPlusD.x * sigmaPlusD.y * sigmaPlusD.z;
-    float omega = glm::clamp(product, tet.minOmega, tet.maxOmega);
-    float C = product - omega;
-    glm::vec3 gradC(
-        sigmaPlusD.y * sigmaPlusD.z,
-        sigmaPlusD.x * sigmaPlusD.z,
-        sigmaPlusD.x * sigmaPlusD.y);
-    D = (glm::dot(gradC, D) - C) * gradC / glm::dot(gradC, gradC);
-  }
+  //const uint32_t COMP_D_ITERS = 10;
+  //glm::vec3 D(0.0f);
+  //for (uint32_t i = 0; i < COMP_D_ITERS; ++i) {
+  //  glm::vec3 sigmaPlusD = sigma + D;
+  //  float product = sigmaPlusD.x * sigmaPlusD.y * sigmaPlusD.z;
+  //  float omega = glm::clamp(product, tet.minOmega, tet.maxOmega);
+  //  float C = product - omega;
+  //  glm::vec3 gradC(
+  //      sigmaPlusD.y * sigmaPlusD.z,
+  //      sigmaPlusD.x * sigmaPlusD.z,
+  //      sigmaPlusD.x * sigmaPlusD.y);
+  //  D = (glm::dot(gradC, D) - C) * gradC / glm::dot(gradC, gradC);
+  //}
 
-  sigma += D;
+  //sigma += D;
 
-  for (uint32_t i = 0; i < 3; ++i) {
-    sigma[i] = glm::clamp(sigma[i], tet.minStrain, tet.maxStrain);
-  }
+  sigma = glm::clamp(sigma, tet.minStrain, tet.maxStrain);
 
   if (glm::determinant(F) < 0.0f) {
     sigma[2] *= -1.0f;
@@ -113,7 +111,7 @@ __global__ void projectTets(
   P1[1][3] = Fhat[1][2];
   P1[2][3] = Fhat[2][2];
 
-  wAtBp[i] = tet.w * tet.AtB * P1;
+  wAtBp[index] = tet.w * tet.AtB * P1;
 }
 
 namespace Pies {
@@ -194,20 +192,43 @@ TetrahedralConstraintCollection::TetrahedralConstraintCollection(
 
   // Create device memory to hold the projection output.
   cudaMalloc(&this->_dev_wAtBp, sizeof(glm::mat3x4) * this->_tets.size());
+
+  cudaDeviceSynchronize();
 }
 
 TetrahedralConstraintCollection::TetrahedralConstraintCollection(
     TetrahedralConstraintCollection&& rhs)
     : _tets(std::move(rhs._tets)),
-      _dev_tets(rhs._dev_tets),
-      _dev_wAtBp(rhs._dev_wAtBp),
       _wAtBp(std::move(rhs._wAtBp)) {
+  if (this->_dev_tets) {
+    cudaFree(this->_dev_tets);
+  }
+
+  if (this->_dev_wAtBp) {
+    cudaFree(this->_dev_wAtBp);
+  }
+
+  cudaDeviceSynchronize();
+
+  this->_dev_tets = rhs._dev_tets;
+  this->_dev_wAtBp = rhs._dev_wAtBp;
+
   rhs._dev_tets = nullptr;
   rhs._dev_wAtBp = nullptr;
 }
 
 TetrahedralConstraintCollection& TetrahedralConstraintCollection::operator=(
     TetrahedralConstraintCollection&& rhs) {
+  if (this->_dev_tets) {
+    cudaFree(this->_dev_tets);
+  }
+
+  if (this->_dev_wAtBp) {
+    cudaFree(this->_dev_wAtBp);
+  }
+
+  cudaDeviceSynchronize();
+
   this->_tets = std::move(rhs._tets);
   this->_dev_tets = rhs._dev_tets;
   this->_dev_wAtBp = rhs._dev_wAtBp;
@@ -227,6 +248,8 @@ TetrahedralConstraintCollection::~TetrahedralConstraintCollection() {
   if (this->_dev_wAtBp) {
     cudaFree(this->_dev_wAtBp);
   }
+
+  cudaDeviceSynchronize();
 }
 
 void TetrahedralConstraintCollection::project(glm::vec3* devNodePositions) {
@@ -249,6 +272,7 @@ void TetrahedralConstraintCollection::project(glm::vec3* devNodePositions) {
       this->_dev_wAtBp,
       sizeof(glm::mat3x4) * this->_tets.size(),
       cudaMemcpyDeviceToHost);
+  cudaDeviceSynchronize();
 }
 
 void TetrahedralConstraintCollection::setupGlobalForceVector(
