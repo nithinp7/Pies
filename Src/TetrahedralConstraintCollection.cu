@@ -30,10 +30,10 @@ __global__ void projectTets(
   const glm::vec3& x3 = devNodePositions[tet.nodeIds[2]];
   const glm::vec3& x4 = devNodePositions[tet.nodeIds[3]];
 
-  glm::mat3 P(x2 - x1, x3 - x1, x4 - x1);
+  glm::mat3 Xg(x2 - x1, x3 - x1, x4 - x1);
 
   // Deformation gradient
-  glm::mat3 F = glm::transpose(P * tet.Qinv);
+  glm::mat3 F = Xg * tet.Xf_inv;
 
   SVD::Mat3x3 F_(
       F[0][0],
@@ -46,16 +46,28 @@ __global__ void projectTets(
       F[1][2],
       F[2][2]);
   SVD::SVDSet svdRes = SVD::svd(F_);
-  
+
   glm::mat3 U(
-      svdRes.U.m_00, svdRes.U.m_10, svdRes.U.m_20, 
-      svdRes.U.m_01, svdRes.U.m_11, svdRes.U.m_21, 
-      svdRes.U.m_02, svdRes.U.m_12, svdRes.U.m_22); 
+      svdRes.U.m_00,
+      svdRes.U.m_10,
+      svdRes.U.m_20,
+      svdRes.U.m_01,
+      svdRes.U.m_11,
+      svdRes.U.m_21,
+      svdRes.U.m_02,
+      svdRes.U.m_12,
+      svdRes.U.m_22);
   glm::vec3 sigma(svdRes.S.m_00, svdRes.S.m_11, svdRes.V.m_22);
   glm::mat3 V(
-      svdRes.V.m_00, svdRes.V.m_10, svdRes.V.m_20, 
-      svdRes.V.m_01, svdRes.V.m_11, svdRes.V.m_21, 
-      svdRes.V.m_02, svdRes.V.m_12, svdRes.V.m_22); 
+      svdRes.V.m_00,
+      svdRes.V.m_10,
+      svdRes.V.m_20,
+      svdRes.V.m_01,
+      svdRes.V.m_11,
+      svdRes.V.m_21,
+      svdRes.V.m_02,
+      svdRes.V.m_12,
+      svdRes.V.m_22);
 
   // glm::mat3 U(0.0f);
   // glm::vec3 sigma(0.0f);
@@ -119,22 +131,11 @@ __global__ void projectTets(
   // The "fixed" deformation gradient
   glm::mat3
       sigma_(sigma.x, 0.0f, 0.0f, 0.0f, sigma.y, 0.0f, 0.0f, 0.0f, sigma.z);
-  glm::mat3 Fhat = U * sigma_ * glm::transpose(V);
+  glm::mat3 T = U * sigma_ * glm::transpose(V);
 
-  glm::mat3x4 P1(0.0f);
-  P1[0][1] = Fhat[0][0];
-  P1[1][1] = Fhat[1][0];
-  P1[2][1] = Fhat[2][0];
+  // Note that Tt = Bp in our construction
 
-  P1[0][2] = Fhat[0][1];
-  P1[1][2] = Fhat[1][1];
-  P1[2][2] = Fhat[2][1];
-
-  P1[0][3] = Fhat[0][2];
-  P1[1][3] = Fhat[1][2];
-  P1[2][3] = Fhat[2][2];
-
-  wAtBp[index] = tet.w * tet.AtB * P1;
+  wAtBp[index] = tet.w * tet.At * glm::transpose(T);
 }
 
 namespace Pies {
@@ -156,32 +157,23 @@ TetrahedralConstraint::TetrahedralConstraint(
       maxOmega(maxOmega_) {
 
   // Converts world positions to differential coords
-  glm::mat4x3 worldToDiff(0.0f);
-  worldToDiff[0][0] = -1.0f;
-  worldToDiff[0][1] = -1.0f;
-  worldToDiff[0][2] = -1.0f;
+  glm::mat4x3 M(0.0f);
+  M[0][0] = -1.0f;
+  M[0][1] = -1.0f;
+  M[0][2] = -1.0f;
 
-  worldToDiff[1][0] = 1.0f;
-  worldToDiff[2][1] = 1.0f;
-  worldToDiff[3][2] = 1.0f;
+  M[1][0] = 1.0f;
+  M[2][1] = 1.0f;
+  M[3][2] = 1.0f;
 
   // Converts barycentric coords to world differential cords
-  glm::mat3 baryToDiff(
+  glm::mat3 Xf(
       b.position - a.position,
       c.position - a.position,
       d.position - a.position);
-  this->Qinv = glm::inverse(baryToDiff);
+  this->Xf_inv = glm::inverse(Xf);
 
-  // TODO: Simplify??
-  glm::mat3x4 At = glm::transpose(glm::transpose(this->Qinv) * worldToDiff);
-  // Add empty row corresponding to the first row since its differential
-  // coord is always 0 (can we just ignore this?)
-  // Note: Be careful about the column/row indices if changing this in the
-  // future.
-  this->AtB = glm::mat4(0.0f);
-  this->AtB[1] = At[0];
-  this->AtB[2] = At[1];
-  this->AtB[3] = At[2];
+  this->At = glm::transpose(glm::transpose(this->Xf_inv) * M);
 }
 
 TetrahedralConstraintCollection::TetrahedralConstraintCollection(
@@ -193,7 +185,7 @@ TetrahedralConstraintCollection::TetrahedralConstraintCollection(
 
   for (const TetrahedralConstraint& tet : this->_tets) {
     // B is identity here
-    glm::mat4 AtA = tet.AtB * glm::transpose(tet.AtB);
+    glm::mat4 AtA = tet.At * glm::transpose(tet.At);
     for (int i = 0; i < 4; ++i) {
       int nodeId_i = tet.nodeIds[i];
       for (int j = 0; j < 4; ++j) {

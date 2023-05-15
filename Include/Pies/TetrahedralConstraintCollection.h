@@ -10,9 +10,8 @@ namespace Pies {
 struct Node;
 
 struct alignas(16) TetrahedralConstraint {
-  // TODO: Can we avoid making A specific to each tet's rest pose?
-  glm::mat4 AtB;
-  glm::mat3 Qinv;
+  glm::mat3x4 At;
+  glm::mat3 Xf_inv;
 
   int nodeIds[4];
 
