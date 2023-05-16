@@ -106,27 +106,27 @@ __global__ void projectTets(
   //     V[1][2],
   //     V[2][2]);
 
-  sigma = glm::clamp(sigma, tet.minStrain, tet.maxStrain);
-
   if (glm::determinant(F) < 0.0f) {
     sigma[2] *= -1.0f;
   }
 
-  const uint32_t COMP_D_ITERS = 10;
-  glm::vec3 D(0.0f);
-  for (uint32_t i = 0; i < COMP_D_ITERS; ++i) {
-    glm::vec3 sigmaPlusD = sigma + D;
-    float product = sigmaPlusD.x * sigmaPlusD.y * sigmaPlusD.z;
-    float omega = glm::clamp(product, tet.minOmega, tet.maxOmega);
-    float C = product - omega;
-    glm::vec3 gradC(
-        sigmaPlusD.y * sigmaPlusD.z,
-        sigmaPlusD.x * sigmaPlusD.z,
-        sigmaPlusD.x * sigmaPlusD.y);
-    D = (glm::dot(gradC, D) - C) * gradC / glm::dot(gradC, gradC);
-  }
+  sigma = glm::clamp(sigma, tet.minStrain, tet.maxStrain);
 
-  sigma += D;
+  // const uint32_t COMP_D_ITERS = 10;
+  // glm::vec3 D(0.0f);
+  // for (uint32_t i = 0; i < COMP_D_ITERS; ++i) {
+  //   glm::vec3 sigmaPlusD = sigma + D;
+  //   float product = sigmaPlusD.x * sigmaPlusD.y * sigmaPlusD.z;
+  //   float omega = glm::clamp(product, tet.minOmega, tet.maxOmega);
+  //   float C = product - omega;
+  //   glm::vec3 gradC(
+  //       sigmaPlusD.y * sigmaPlusD.z,
+  //       sigmaPlusD.x * sigmaPlusD.z,
+  //       sigmaPlusD.x * sigmaPlusD.y);
+  //   D = (glm::dot(gradC, D) - C) * gradC / glm::dot(gradC, gradC);
+  // }
+
+  // sigma += D;
 
   // The "fixed" deformation gradient
   glm::mat3
