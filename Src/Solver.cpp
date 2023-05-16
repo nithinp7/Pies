@@ -119,6 +119,10 @@ void Solver::tickPD(float /*timestep*/) {
 
   for (uint32_t substep = 0; substep < MAX_SUBSTEPS && timeLeft > 0.0001f;
        ++substep) {
+    if (this->_simFailed) {
+      return;
+    }
+
     float h = timeLeft;
     float h2 = h * h;
 
@@ -598,8 +602,9 @@ void Solver::_parallelPointTriangleCollisions() {
             // Check all triangles in the bucket
             for (const Triangle* pOtherTri : pBucket->values) {
 
-              if (pBucket->values.size() > 500) {
+              if (pBucket->values.size() > 1000) {
                 // Safety check to avoid simulation hangs
+                // TODO: Is this still needed??
                 data.failed = true;
                 return;
               }
@@ -620,9 +625,9 @@ void Solver::_parallelPointTriangleCollisions() {
               }
 
               // TODO: This should not be used with two-sided IPC...
-              // if (!trianglesFacingIn(tri, *pOtherTri, nodes)) {
-              //   continue;
-              // }
+              if (!trianglesFacingIn(tri, *pOtherTri, nodes)) {
+                continue;
+              }
 
               const Node& nodeB = nodes[pOtherTri->nodeIds[0]];
               const Node& nodeC = nodes[pOtherTri->nodeIds[1]];

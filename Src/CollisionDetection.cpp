@@ -119,12 +119,12 @@ struct CubicExpression {
     float derivLinearCoeff = 2 * this->quadCoeff;
     float derivConst = this->linearCoeff;
 
-    const uint32_t NEWTON_ITERS = 20;
-    const float EPS = 0.001f;
+    const uint32_t NEWTON_ITERS = 50;
+    const float EPS = 0.0001f;
 
     // Initial guess half-way in the interval, hopefully sufficiently far away from
     // critical points.
-    float t = interval->start;
+    float t = glm::min(interval->start, EPS);
     for (uint32_t i = 0; i < NEWTON_ITERS; ++i) {
       // Derivative evaluated at t
       float fpt =
