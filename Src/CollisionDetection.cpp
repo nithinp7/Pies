@@ -124,7 +124,7 @@ struct CubicExpression {
 
     // Initial guess half-way in the interval, hopefully sufficiently far away from
     // critical points.
-    float t = glm::min(interval->start, EPS);
+    float t = glm::max(interval->start, EPS);
     for (uint32_t i = 0; i < NEWTON_ITERS; ++i) {
       // Derivative evaluated at t
       float fpt =
