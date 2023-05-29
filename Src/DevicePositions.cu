@@ -28,6 +28,7 @@ DevicePositions::DevicePositions(DevicePositions&& rhs)
     _devPositions(rhs._devPositions),
     _scratch(std::move(rhs._scratch)) {
   rhs._devPositions = nullptr;
+  rhs._count = 0;
 }
 
 DevicePositions& DevicePositions::operator=(DevicePositions&& rhs) {
@@ -36,6 +37,7 @@ DevicePositions& DevicePositions::operator=(DevicePositions&& rhs) {
   this->_scratch = std::move(rhs._scratch);
 
   rhs._devPositions = nullptr;
+  rhs._count = 0;
 
   return *this;
 }

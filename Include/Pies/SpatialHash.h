@@ -132,8 +132,6 @@ public:
     // NOTE: Based on example given in:
     // https://greg7mdp.github.io/parallel-hashmap/
     constexpr size_t numThreads = 16; // has to be a power of two
-    // TODO: This is temporary, make this more flexible
-    assert(omp_get_num_threads() == 16);
 
     #pragma omp parallel 
     {

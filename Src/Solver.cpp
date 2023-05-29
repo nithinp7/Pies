@@ -48,6 +48,10 @@ void Solver::tick(float timestep) {
 void Solver::tickPD(float /*timestep*/) {
   uint32_t nodeCount = static_cast<uint32_t>(this->_nodes.size());
 
+  if (nodeCount == 0) {
+    return;
+  }
+
   if (this->_previousNodeCount != nodeCount) {
     this->_previousNodeCount = nodeCount;
 
@@ -115,7 +119,7 @@ void Solver::tickPD(float /*timestep*/) {
   }
 
   float timeLeft = this->_options.fixedTimestepSize;
-  const uint32_t MAX_SUBSTEPS = 20;
+  const uint32_t MAX_SUBSTEPS = 25;
 
   for (uint32_t substep = 0; substep < MAX_SUBSTEPS && timeLeft > 0.0001f;
        ++substep) {
@@ -137,9 +141,9 @@ void Solver::tickPD(float /*timestep*/) {
       this->_Msn_h2.coeffRef(i, 2) = Msn_h2.z;
     }
 
-    if (substep == 0) {
-      this->_parallelPointTriangleCollisions();
-    }
+     if (substep == 0) {
+       this->_parallelPointTriangleCollisions();
+     }
 
     // this->_collisionMatrix.setZero();
     this->_stiffnessAndCollisionMatrix.setZero();
@@ -151,9 +155,9 @@ void Solver::tickPD(float /*timestep*/) {
       collision.setupTriplets(this->_collisionTriplets);
     }
 
-    // for (const EdgeCollisionConstraint& collision : this->_edgeCollisions) {
-    //   collision.setupCollisionMatrix(this->_collisionMatrix);
-    // }
+    for (const EdgeCollisionConstraint& collision : this->_edgeCollisions) {
+      collision.setupTriplets(this->_collisionTriplets);
+    }
 
     for (const StaticCollisionConstraint& collision : this->_staticCollisions) {
       collision.setupTriplets(this->_collisionTriplets);
@@ -339,19 +343,49 @@ void Solver::tickPD(float /*timestep*/) {
     // divide-by-zero)
     for (uint32_t i = 0; i < nodeCount; ++i) {
       Node& node = this->_nodes[i];
-      node.velocity = (1.0f - this->_options.damping) *
-                      (node.position - node.prevPosition) / h;
+      node.velocity = (node.position - node.prevPosition) / h;
     }
 
     // Truncate time-step to just before earliest collision
     // TODO: Do this for static collisions too...
     this->_parallelPointTriangleCollisions();
 
+    const float toiRollback = 0.95f;
     float t = 1.0f;
     for (const PointTriangleCollisionConstraint& collision :
          this->_triCollisions) {
-      if (0.8f * collision.toi <= t) {
-        t = 0.8f * collision.toi;
+      if (collision.toi == 1.0f) {
+        // TODO: Explicitly return that no CCD intersection took place,
+        // but we are within the thickness at the end of the interval
+        continue;
+      }
+
+      if (toiRollback * collision.toi <= t) {
+        t = toiRollback * collision.toi;
+      }
+    }
+
+    for (const EdgeCollisionConstraint& collision : this->_edgeCollisions) {
+      if (collision.toi == 1.0f) {
+        // TODO: Explicitly return that no CCD intersection took place,
+        // but we are within the thickness at the end of the interval
+        continue;
+      }
+
+      if (toiRollback * collision.toi <= t) {
+        t = toiRollback * collision.toi;
+      }
+    }
+
+    for (const StaticCollisionConstraint& collision : this->_staticCollisions) {
+      if (collision.toi == 1.0f) {
+        // TODO: Explicitly return that no CCD intersection took place,
+        // but we are within the thickness at the end of the interval
+        continue;
+      }
+
+      if (toiRollback * collision.toi <= t) {
+        t = toiRollback * collision.toi;
       }
     }
 
@@ -364,6 +398,7 @@ void Solver::tickPD(float /*timestep*/) {
 
     for (uint32_t i = 0; i < nodeCount; ++i) {
       Node& node = this->_nodes[i];
+      node.velocity *= (1.0f - this->_options.damping);
       node.velocity += h * node.force * node.invMass;
       // Construct momentum estimate for qn+1
       node.position = glm::mix(node.prevPosition, node.position, t);
@@ -395,8 +430,10 @@ void Solver::tickPD(float /*timestep*/) {
 
       glm::vec3 avgTriVelocity = (b.velocity + c.velocity + d.velocity) / 3.0f;
 
-      glm::vec3 n = collision.side * glm::normalize(
-          glm::cross(c.position - b.position, d.position - b.position));
+      glm::vec3 n =
+          collision.side *
+          glm::normalize(
+              glm::cross(c.position - b.position, d.position - b.position));
 
       glm::vec3 relativeVelocity = a.velocity - avgTriVelocity;
       float vDotN = glm::dot(relativeVelocity, n);
@@ -411,12 +448,38 @@ void Solver::tickPD(float /*timestep*/) {
       float triWSum = b.invMass + c.invMass + d.invMass;
       float wSum = a.invMass + triWSum;
 
-      glm::vec3 dv = -friction * perpVel - 1.1f * glm::min(vDotN, 0.0f) * n;
+      glm::vec3 dv = -friction * perpVel; // - 1.5f * glm::min(vDotN, 0.0f) * n;
 
       a.velocity += dv * a.invMass / wSum;
       b.velocity += -dv * triWSum / wSum;
       c.velocity += -dv * triWSum / wSum;
       d.velocity += -dv * triWSum / wSum;
+    }
+
+    for (const EdgeCollisionConstraint& collision : this->_edgeCollisions) {
+
+      Node& a = this->_nodes[collision.nodeIds[0]];
+      Node& b = this->_nodes[collision.nodeIds[1]];
+      Node& c = this->_nodes[collision.nodeIds[2]];
+      Node& d = this->_nodes[collision.nodeIds[3]];
+
+      glm::vec3 l0Vel = (a.velocity + b.velocity) / 2.0f;
+      glm::vec3 l1Vel = (c.velocity + d.velocity) / 2.0f;
+
+      glm::vec3 relativeVelocity = l1Vel - l0Vel;
+      float vDotN = glm::dot(relativeVelocity, collision.n);
+      glm::vec3 normVel = vDotN * collision.n;
+
+      float tri0WSum = a.invMass + b.invMass;
+      float tri1WSum = c.invMass + d.invMass;
+      float wSum = tri0WSum + tri1WSum;
+
+      glm::vec3 dv(0.0f); // = 1.1f * glm::min(vDotN, 0.0f) * collision.n;
+
+      a.velocity += dv * tri0WSum / wSum;
+      b.velocity += dv * tri0WSum / wSum;
+      c.velocity += -dv * tri1WSum / wSum;
+      d.velocity += -dv * tri1WSum / wSum;
     }
 
     for (const StaticCollisionConstraint& collision : this->_staticCollisions) {
@@ -519,7 +582,7 @@ bool trianglesFacingIn(
   glm::vec3 n2 = glm::cross(e - d, f - d);
 
   // Have further limited cone?
-  return glm::dot(n1, n2) < 0.0f;
+  return glm::dot(n1, n2) < 0.00001f;
 }
 } // namespace
 
@@ -540,165 +603,203 @@ void Solver::_parallelPointTriangleCollisions() {
       {this->_nodes, this->_options.collisionThresholdDistance});
 
   // Detect and resolve collisions
-  auto fnComputeCollisions =
-      [&nodes = this->_nodes,
-       &triangles = this->_triangles,
-       threadCount = this->_options.threadCount,
-       &spatialHash = this->_spatialHashTris,
-       &threadData = this->_threadData,
-       threshold = this->_options.collisionThresholdDistance,
-       thickness = this->_options.collisionThickness,
-       floorHeight = this->_options.floorHeight](size_t threadId) {
-        ThreadData& data = threadData[threadId];
+  auto fnComputeCollisions = [&nodes = this->_nodes,
+                              &triangles = this->_triangles,
+                              threadCount = this->_options.threadCount,
+                              &spatialHash = this->_spatialHashTris,
+                              &threadData = this->_threadData,
+                              threshold =
+                                  this->_options.collisionThresholdDistance,
+                              thickness = this->_options.collisionThickness,
+                              floorHeight =
+                                  this->_options.floorHeight](size_t threadId) {
+    ThreadData& data = threadData[threadId];
 
-        std::vector<const SpatialHashGridCellBucket<Triangle>*> buckets;
+    std::vector<const SpatialHashGridCellBucket<Triangle>*> buckets;
 
-        data.triCollisions.clear();
-        data.edgeCollisions.clear();
-        data.staticCollisions.clear();
+    data.triCollisions.clear();
+    data.edgeCollisions.clear();
+    data.staticCollisions.clear();
 
-        for (size_t triId = threadId; triId < triangles.size();
-             triId += threadCount) {
-          const Triangle& tri = triangles[triId];
+    for (size_t triId = threadId; triId < triangles.size();
+         triId += threadCount) {
+      const Triangle& tri = triangles[triId];
 
-          SpatialHashGridCellRange range = sweptTriRange(
-              tri,
-              nodes,
-              spatialHash.getGrid(),
-              threshold,
-              data.failed);
-          if (data.failed) {
-            return;
-          }
+      SpatialHashGridCellRange range = sweptTriRange(
+          tri,
+          nodes,
+          spatialHash.getGrid(),
+          threshold,
+          data.failed);
+      if (data.failed) {
+        return;
+      }
 
-          //     ccdRange(nodeA.prevPosition, nodeA.position,
-          //     spatialHash.getGrid());
+      glm::vec3 triN = glm::normalize(glm::cross(
+          nodes[tri.nodeIds[1]].prevPosition -
+              nodes[tri.nodeIds[0]].prevPosition,
+          nodes[tri.nodeIds[2]].prevPosition -
+              nodes[tri.nodeIds[0]].prevPosition));
 
-          for (uint32_t dx = 0; dx < range.lengthX; ++dx) {
-            for (uint32_t dy = 0; dy < range.lengthY; ++dy) {
-              for (uint32_t dz = 0; dz < range.lengthZ; ++dz) {
-                // Compute grid cell id
-                SpatialHashGridCellId id{
-                    range.minX + dx,
-                    range.minY + dy,
-                    range.minZ + dz};
+      //     ccdRange(nodeA.prevPosition, nodeA.position,
+      //     spatialHash.getGrid());
 
-                const SpatialHashGridCellBucket<Triangle>* pBucket =
-                    spatialHash.findCollisions(id);
-                if (pBucket) {
-                  buckets.push_back(pBucket);
-                }
-              }
+      for (uint32_t dx = 0; dx < range.lengthX; ++dx) {
+        for (uint32_t dy = 0; dy < range.lengthY; ++dy) {
+          for (uint32_t dz = 0; dz < range.lengthZ; ++dz) {
+            // Compute grid cell id
+            SpatialHashGridCellId id{
+                range.minX + dx,
+                range.minY + dy,
+                range.minZ + dz};
+
+            const SpatialHashGridCellBucket<Triangle>* pBucket =
+                spatialHash.findCollisions(id);
+            if (pBucket) {
+              buckets.push_back(pBucket);
             }
           }
+        }
+      }
 
-          if (buckets.size() > 200) {
+      if (buckets.size() > 200) {
+        // Safety check to avoid simulation hangs
+        data.failed = true;
+        return;
+      }
+
+      for (const SpatialHashGridCellBucket<Triangle>* pBucket : buckets) {
+        // Check all triangles in the bucket
+        for (const Triangle* pOtherTri : pBucket->values) {
+
+          if (pBucket->values.size() > 400) {
             // Safety check to avoid simulation hangs
+            // TODO: Is this still needed??
             data.failed = true;
             return;
           }
 
-          for (const SpatialHashGridCellBucket<Triangle>* pBucket : buckets) {
-            // Check all triangles in the bucket
-            for (const Triangle* pOtherTri : pBucket->values) {
-
-              if (pBucket->values.size() > 1000) {
-                // Safety check to avoid simulation hangs
-                // TODO: Is this still needed??
-                data.failed = true;
-                return;
+          bool containsCommonNode = false;
+          // TODO: Is there any case where we want to collide between two
+          // connected triangles??
+          for (uint32_t i = 0; i < 3; ++i) {
+            for (uint32_t j = 0; j < 3; ++j) {
+              if (tri.nodeIds[i] == pOtherTri->nodeIds[j]) {
+                containsCommonNode = true;
               }
-
-              bool containsCommonNode = false;
-              // TODO: Is there any case where we want to collide between two
-              // connected triangles??
-              for (uint32_t i = 0; i < 3; ++i) {
-                for (uint32_t j = 0; j < 3; ++j) {
-                  if (tri.nodeIds[i] == pOtherTri->nodeIds[j]) {
-                    containsCommonNode = true;
-                  }
-                }
-              }
-
-              if (containsCommonNode) {
-                continue;
-              }
-
-              // TODO: This should not be used with two-sided IPC...
-              if (!trianglesFacingIn(tri, *pOtherTri, nodes)) {
-                continue;
-              }
-
-              const Node& nodeB = nodes[pOtherTri->nodeIds[0]];
-              const Node& nodeC = nodes[pOtherTri->nodeIds[1]];
-              const Node& nodeD = nodes[pOtherTri->nodeIds[2]];
-
-              // Point-triangle collisions
-              for (uint32_t i = 0; i < 3; ++i) {
-                const Node& nodeA = nodes[tri.nodeIds[i]];
-
-                std::optional<float> optT =
-                    CollisionDetection::pointTriangleCCD(
-                        nodeA.prevPosition - nodeB.prevPosition,
-                        nodeC.prevPosition - nodeB.prevPosition,
-                        nodeD.prevPosition - nodeB.prevPosition,
-                        nodeA.position - nodeB.position,
-                        nodeC.position - nodeB.position,
-                        nodeD.position - nodeB.position,
-                        threshold);
-
-                if (!optT) {
-                  // CCD did not find intersection
-                  continue;
-                }
-
-                data.triCollisions
-                    .emplace_back(nodeA, nodeB, nodeC, nodeD, thickness, *optT);
-              }
-
-              // for (uint32_t i = 0; i < 3; ++i) {
-              //   for (uint32_t j = 0; j < 3; ++j) {
-              //     const Node& a = nodes[tri.nodeIds[i]];
-              //     const Node& b = nodes[tri.nodeIds[(i + 1) % 3]];
-
-              //     const Node& c = nodes[pOtherTri->nodeIds[j]];
-              //     const Node& d = nodes[pOtherTri->nodeIds[(j + 1) % 3]];
-
-              //     std::optional<float> optT =
-              //     CollisionDetection::edgeEdgeCCD(
-              //         b.prevPosition - a.prevPosition,
-              //         c.prevPosition - a.prevPosition,
-              //         d.prevPosition - a.prevPosition,
-              //         b.position - a.position,
-              //         c.position - a.position,
-              //         d.position - a.position);
-
-              //     if (!optT) {
-              //       // CCD did not find intersection
-              //       continue;
-              //     }
-
-              //     data.edgeCollisions.emplace_back(a, b, c, d);
-              //   }
-              // }
             }
           }
 
-          buckets.clear();
+          if (containsCommonNode) {
+            continue;
+          }
+
+          // TODO: This should not be used with two-sided IPC...
+          // if (!trianglesFacingIn(tri, *pOtherTri, nodes)) {
+          //   continue;
+          // }
+
+          const Node& nodeB = nodes[pOtherTri->nodeIds[0]];
+          const Node& nodeC = nodes[pOtherTri->nodeIds[1]];
+          const Node& nodeD = nodes[pOtherTri->nodeIds[2]];
+
+          // Point-triangle collisions
+          for (uint32_t i = 0; i < 3; ++i) {
+            const Node& nodeA = nodes[tri.nodeIds[i]];
+
+            glm::vec3 barycentric;
+            std::optional<float> optT = CollisionDetection::pointTriangleCCD(
+                nodeA.prevPosition - nodeB.prevPosition,
+                nodeC.prevPosition - nodeB.prevPosition,
+                nodeD.prevPosition - nodeB.prevPosition,
+                nodeA.position - nodeB.position,
+                nodeC.position - nodeB.position,
+                nodeD.position - nodeB.position,
+                barycentric,
+                threshold);
+
+            if (!optT) {
+              // CCD did not find intersection
+              continue;
+            }
+
+            data.triCollisions.emplace_back(
+                nodeA,
+                nodeB,
+                nodeC,
+                nodeD,
+                thickness,
+                barycentric,
+                *optT);
+          }
 
           for (uint32_t i = 0; i < 3; ++i) {
-            const Node& node = nodes[tri.nodeIds[i]];
-            if (node.position.y < floorHeight + thickness) {
-              // TODO: Guard divide by zero??
-              float toi = glm::clamp(
-                  node.prevPosition.y / (node.prevPosition.y - node.position.y),
-                  0.0f,
-                  1.0f);
-              data.staticCollisions.emplace_back(node, toi);
+            for (uint32_t j = 0; j < 3; ++j) {
+              const Node& a = nodes[tri.nodeIds[i]];
+              const Node& b = nodes[tri.nodeIds[(i + 1) % 3]];
+
+              const Node& c = nodes[pOtherTri->nodeIds[j]];
+              const Node& d = nodes[pOtherTri->nodeIds[(j + 1) % 3]];
+
+              glm::vec2 uv;
+              // TODO: Not using n from collision detection
+              glm::vec3 n;
+              std::optional<float> optT = CollisionDetection::edgeEdgeCCD(
+                  b.prevPosition - a.prevPosition,
+                  c.prevPosition - a.prevPosition,
+                  d.prevPosition - a.prevPosition,
+                  b.position - a.position,
+                  c.position - a.position,
+                  d.position - a.position,
+                  triN,
+                  threshold,
+                  uv,
+                  n);
+
+              if (!optT) {
+                // CCD did not find intersection
+                continue;
+              }
+
+              // Fix the normal, TODO: Simplify this process
+              glm::vec3 ab = b.prevPosition - a.prevPosition;
+              glm::vec3 ac = c.prevPosition - a.prevPosition;
+              glm::vec3 ad = d.prevPosition - a.prevPosition;
+
+              // If l1 is behind l0 along n, then flip the normal
+              float intADotN =
+                  glm::dot(ab * uv.x, n); // glm::min(glm::dot(ab, n), 0.0f);
+              float intBDotN = glm::dot(glm::mix(ac, ad, uv.y), n);
+              if (intADotN < intBDotN) {
+                n = -n;
+              }
+
+              data.edgeCollisions
+                  .emplace_back(a, b, c, d, thickness, *optT, uv, n);
             }
           }
         }
-      };
+      }
+
+      buckets.clear();
+
+      for (uint32_t i = 0; i < 3; ++i) {
+        const Node& node = nodes[tri.nodeIds[i]];
+        if (node.position.y <= floorHeight + thickness) {
+          float toi = 1.0f;
+          // float diff = node.prevPosition.y - node.position.y;
+          // if (diff > 0.00001f) {
+          //   toi = glm::clamp(
+          //       (node.prevPosition.y - floorHeight) / diff,
+          //       0.0f,
+          //       1.0f);
+          // }
+
+          data.staticCollisions.emplace_back(node, thickness, toi);
+        }
+      }
+    }
+  };
 
 // TODO: No need for lambda function fnComputeCollisions
 #pragma omp parallel

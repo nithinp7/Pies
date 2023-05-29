@@ -27,7 +27,7 @@ public:
   }
 
 private:
-  size_t _count;
+  size_t _count = 0;
   glm::vec3* _devPositions = nullptr;
 
   std::vector<glm::vec3> _scratch;
