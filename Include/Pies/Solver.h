@@ -1,12 +1,16 @@
 #pragma once
 
+#include <cuda.h>
+
 #include "CollisionConstraint.h"
 #include "Constraints.h"
 #include "Node.h"
 #include "ShapeMatchingConstraint.h"
 #include "SpatialHash.h"
+#include "TetrahedralConstraintCollection.h"
 #include "Tetrahedron.h"
 #include "Triangle.h"
+#include "DevicePositions.h"
 
 #include <Eigen/Core>
 #include <Eigen/SparseCholesky>
@@ -59,7 +63,6 @@ public:
   ~Solver();
 
   void tick(float deltaTime);
-  void tickPBD(float deltaTime);
   void tickPD(float deltaTime);
 
   const std::vector<Vertex>& getVertices() const { return this->_vertices; }
@@ -89,34 +92,7 @@ public:
   void updateFixedRegions(const std::vector<glm::mat4>& regionMatrices);
   void addLinkedRegions(const std::vector<glm::mat4>& regionsMatrices, float w);
 
-  // Utilities for spawning primitives
-  void createBox(const glm::vec3& translation, float scale, float w);
-  void createTetBox(
-      const glm::vec3& translation,
-      float scale,
-      const glm::vec3& initialVelocity,
-      float w,
-      float mass,
-      bool hinged);
-  void
-  createSheet(const glm::vec3& translation, float scale, float mass, float k);
-  void createShapeMatchingBox(
-      const glm::vec3& translation,
-      uint32_t countX,
-      uint32_t countY,
-      uint32_t countZ,
-      float scale,
-      const glm::vec3& initialVelocity,
-      float w);
-  void createShapeMatchingSheet(
-      const glm::vec3& translation,
-      float scale,
-      const glm::vec3& initialVelocity,
-      float w);
-  void createBendSheet(const glm::vec3& translation, float scale, float w);
-
 private:
-  void _parallelComputeCollisions();
   void _parallelPointTriangleCollisions();
 
   struct NodeCompRange {
@@ -124,15 +100,9 @@ private:
     operator()(const Node& node, const SpatialHashGrid& grid) const;
   };
 
-  struct TetCompRange {
-    const std::vector<Node>& nodes;
-
-    SpatialHashGridCellRange
-    operator()(const Tetrahedron& node, const SpatialHashGrid& grid) const;
-  };
-
   struct TriCompRange {
     const std::vector<Node>& nodes;
+    float threshold;
 
     SpatialHashGridCellRange
     operator()(const Triangle& triangle, const SpatialHashGrid& grid) const;
@@ -143,7 +113,6 @@ private:
 
   SpatialHash<Node, NodeCompRange> _spatialHashNodes;
   SpatialHash<Triangle, TriCompRange> _spatialHashTris;
-  SpatialHash<Tetrahedron, TetCompRange> _spatialHashTets;
 
   struct FixedRegion {
     glm::mat4 initialTransform{};
@@ -151,29 +120,35 @@ private:
     uint32_t goalMatchingConstraint{};
   };
 
+  // CUDA Resources
+  DevicePositions _devicePositions;
+  TetrahedralConstraintCollection _tetCollection;
+
   std::vector<Node> _nodes;
   std::vector<Tetrahedron> _tets;
   std::vector<FixedRegion> _fixedRegions;
   std::vector<PositionConstraint> _positionConstraints;
   std::vector<DistanceConstraint> _distanceConstraints;
   std::vector<TetrahedralConstraint> _tetConstraints;
-  std::vector<VolumeConstraint> _volumeConstraints;
   std::vector<ShapeMatchingConstraint> _shapeConstraints;
   std::vector<GoalMatchingConstraint> _goalConstraints;
   std::vector<BendConstraint> _bendConstraints;
 
   uint32_t _previousNodeCount = 0;
-  Eigen::MatrixXf _stateVector;
+  Eigen::VectorXf _stateVectorX;
+  Eigen::VectorXf _stateVectorY;
+  Eigen::VectorXf _stateVectorZ;
+
   Eigen::MatrixXf _forceVector;
   Eigen::MatrixXf _Msn_h2;
   Eigen::SparseMatrix<float> _stiffnessMatrix;
   Eigen::SparseMatrix<float> _collisionMatrix;
+  std::vector<Eigen::Triplet<float>> _collisionTriplets;
   Eigen::SparseMatrix<float> _stiffnessAndCollisionMatrix;
   // This isn't movable, so we keep it on the heap
   std::unique_ptr<Eigen::SimplicialLLT<Eigen::SparseMatrix<float>>> _pLltDecomp;
 
   struct ThreadData {
-    std::vector<CollisionConstraint> collisions;
     std::vector<PointTriangleCollisionConstraint> triCollisions;
     std::vector<EdgeCollisionConstraint> edgeCollisions;
     std::vector<StaticCollisionConstraint> staticCollisions;
@@ -183,7 +158,6 @@ private:
 
   std::vector<ThreadData> _threadData;
 
-  std::vector<CollisionConstraint> _collisions;
   std::vector<PointTriangleCollisionConstraint> _triCollisions;
   std::vector<EdgeCollisionConstraint> _edgeCollisions;
   std::vector<StaticCollisionConstraint> _staticCollisions;

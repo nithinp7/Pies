@@ -29,10 +29,15 @@ struct CollisionConstraint {
 };
 
 struct PointTriangleCollisionConstraint {
-  float w = 10000.0f;
+  float toi;
+  float w = 1000.0f;
   uint32_t nodeIds[4];
   glm::vec3 projectedPositions[4];
   glm::vec3 n;
+  float side;
+
+  glm::vec3 disp;
+  
   // A == B
   Eigen::Matrix4f AtA;
   float thickness = 0.01f;
@@ -43,21 +48,27 @@ struct PointTriangleCollisionConstraint {
       const Node& b,
       const Node& c,
       const Node& d,
-      float thickness_);
+      float thickness_,
+      const glm::vec3& barycentric,
+      float toi_);
 
   void projectToAuxiliaryVariable(const std::vector<Node>& nodes);
   void stabilizeCollisions(std::vector<Node>& nodes);
-  void setupCollisionMatrix(Eigen::SparseMatrix<float>& systemMatrix) const;
+  void setupTriplets(std::vector<Eigen::Triplet<float>>& triplets) const;
   void setupGlobalForceVector(Eigen::MatrixXf& forceVector) const;
 };
 
 struct EdgeCollisionConstraint {
-  float w = 1000000.0f;
+  float toi;
+  float w = 1000.0f;
   uint32_t nodeIds[4];
   glm::vec3 projectedPositions[4];
   Eigen::Matrix4f AtA;
 
-  float orientation = 1.0f;
+  glm::vec2 uv;
+  glm::vec3 n;
+
+  glm::vec3 disp;
 
   float thickness = 0.1f;
 
@@ -65,23 +76,29 @@ struct EdgeCollisionConstraint {
       const Node& a,
       const Node& b,
       const Node& c,
-      const Node& d);
+      const Node& d,
+      float thickness_,
+      float toi_,
+      const glm::vec2& uv_,
+      const glm::vec3& n_);
 
   void projectToAuxiliaryVariable(const std::vector<Node>& nodes);
   void stabilizeCollisions(std::vector<Node>& nodes);
-  void setupCollisionMatrix(Eigen::SparseMatrix<float>& systemMatrix) const;
+  void setupTriplets(std::vector<Eigen::Triplet<float>>& triplets) const;
   void setupGlobalForceVector(Eigen::MatrixXf& forceVector) const;
 };
 
 // TODO: Rename to floor collision...
 struct StaticCollisionConstraint {
-  float w = 10000.0f;
+  float toi = 1.0f;
+  float w = 1000.0f;
   uint32_t nodeId;
   glm::vec3 projectedPosition;
+  float thickness;
 
-  StaticCollisionConstraint(const Node& node);
+  StaticCollisionConstraint(const Node& node, float thickness_, float toi_);
 
-  void setupCollisionMatrix(Eigen::SparseMatrix<float>& systemMatrix) const;
+  void setupTriplets(std::vector<Eigen::Triplet<float>>& triplets) const;
   void projectToAuxiliaryVariable(const std::vector<Node>& nodes);
   void setupGlobalForceVector(Eigen::MatrixXf& forceVector) const;
 };

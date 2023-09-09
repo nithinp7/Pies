@@ -65,6 +65,9 @@ struct CubicExpression {
 
         return (f0 * f1 <= 0.0f) ? std::optional<Interval>({0.0f, 1.0f})
                                  : std::nullopt;
+      } else if (t1 <= 0.0f) {
+        // All critical points are before the interval, so we have no roots
+        return std::nullopt;
       } else {
         // We have two intervals to check here, [0,t1] and [t1,1]
         float ft1 = this->eval(t1);
@@ -107,6 +110,19 @@ struct CubicExpression {
   // Based on:
   // High-Performance Polynomial Root Finding For Graphics, Cem Yuksel
   std::optional<float> fastFindRootInInterval() const {
+    // TODO: This is probably too many iterations
+    const uint32_t NEWTON_ITERS = 40;
+    const float EPS = 0.0001f;
+
+    if (this->constCoeff == 0.0f) {
+      if (glm::abs(this->cubicCoeff) < EPS && glm::abs(this->quadCoeff) < EPS &&
+          glm::abs(this->linearCoeff) < EPS) {
+        return 1.0f;
+      }
+
+      return 0.0f;
+    }
+
     std::optional<Interval> interval = findEarliestIntervalOfRoot();
     if (!interval) {
       return std::nullopt;
@@ -116,16 +132,10 @@ struct CubicExpression {
     float derivLinearCoeff = 2 * this->quadCoeff;
     float derivConst = this->linearCoeff;
 
-    const uint32_t NEWTON_ITERS = 50;
-    const float EPS = 0.0001f;
-
-    // Initial guess half-way in the interval, hopefully sufficiently far away from
-    // critical points.
     float t = interval->start;
     for (uint32_t i = 0; i < NEWTON_ITERS; ++i) {
-      // Coefficients of derivative
-      float fpt =
-          derivQuadCoeff * t * t + derivLinearCoeff * t + derivConst;
+      // Derivative evaluated at t
+      float fpt = derivQuadCoeff * t * t + derivLinearCoeff * t + derivConst;
       float ft = this->eval(t);
 
       // TODO: Handle fpt close to 0??
@@ -231,12 +241,13 @@ std::optional<float> pointTriangleCCD(
     const glm::vec3& ap1,
     const glm::vec3& ab1,
     const glm::vec3& ac1,
+    glm::vec3& barycentric,
     float thresholdDistance) {
 
   // Early check to see if the point ever crosses the triangle plane
   // Assumes normal doesn't rotate significantly over the short interval.
-  glm::vec3 n0 = glm::normalize(glm::cross(ab0, ac0));
-  glm::vec3 n1 = glm::normalize(glm::cross(ab1, ac1));
+  glm::vec3 n0 = glm::cross(ab0, ac0);
+  glm::vec3 n1 = glm::cross(ab1, ac1);
   float nDotP0 = glm::dot(n0, ap0);
   float nDotP1 = glm::dot(n1, ap1);
 
@@ -244,17 +255,22 @@ std::optional<float> pointTriangleCCD(
     // The point never crosses the plane of the triangle. We still consider it
     // to be colliding if it is within the thickness.
 
-    // TODO: Should we consider points _behind_ the triangle??
-    if (nDotP1 >= 0.0f && nDotP1 < thresholdDistance) {
-      glm::vec3 barycentricCoords = glm::inverse(glm::mat3(ab1, ac1, n1)) * ap1;
+    float n1mag = glm::length(n1);
+    nDotP1 /= n1mag;
+    n1 /= n1mag;
 
-      if ((0.0 > barycentricCoords.x) || (barycentricCoords.x > 1.0) ||
-          (0.0 > barycentricCoords.y) || (barycentricCoords.y > 1.0) ||
-          (barycentricCoords.x + barycentricCoords.y > 1.0)) {
+    // Considers points behind the triangle as well...
+    if (glm::abs(nDotP1) < thresholdDistance) {
+      barycentric = glm::inverse(glm::mat3(ab1, ac1, n1)) * ap1;
+      barycentric.z = 1.0f - barycentric.x - barycentric.y;
+
+      if ((0.0 > barycentric.x) || (barycentric.x > 1.0) ||
+          (0.0 > barycentric.y) || (barycentric.y > 1.0) ||
+          (barycentric.x + barycentric.y > 1.0)) {
         return std::nullopt;
       }
 
-      return 0.0f;
+      return 1.0f;
     }
 
     return std::nullopt;
@@ -273,8 +289,8 @@ std::optional<float> pointTriangleCCD(
   expandTerm(ac0.x, ap0.y, ab0.z, acd.x, apd.y, abd.z, expression);
   expandTerm(-ac0.x, ab0.y, ap0.z, -acd.x, abd.y, apd.z, expression);
 
-  // std::optional<float> t = expression.fastFindRootInInterval();
-  std::optional<float> t = expression.findRootInInterval();
+  std::optional<float> t = expression.fastFindRootInInterval();
+  // std::optional<float> t = expression.findRootInInterval();
 
   if (!t) {
     // CCD failed to find a point-plane intersection. Static collision has
@@ -290,15 +306,96 @@ std::optional<float> pointTriangleCCD(
 
   glm::vec3 n = glm::normalize(glm::cross(abt, act));
 
-  glm::vec3 barycentricCoords = glm::inverse(glm::mat3(abt, act, n)) * apt;
+  barycentric = glm::inverse(glm::mat3(abt, act, n)) * apt;
+  barycentric.z = 1.0f - barycentric.x - barycentric.y;
 
-  if ((0.0 > barycentricCoords.x) || (barycentricCoords.x > 1.0) ||
-      (0.0 > barycentricCoords.y) || (barycentricCoords.y > 1.0) ||
-      (barycentricCoords.x + barycentricCoords.y > 1.0)) {
+  if ((0.0 > barycentric.x) || (barycentric.x > 1.0) ||
+      (0.0 > barycentric.y) || (barycentric.y > 1.0) ||
+      (barycentric.x + barycentric.y > 1.0)) {
     return std::nullopt;
   }
 
+  // return glm::max(*t, 0.0001f);
   return t;
+}
+
+static std::optional<float> staticEdgeEdgeCollision(
+    const glm::vec3& ab1,
+    const glm::vec3& ac1,
+    const glm::vec3& ad1,
+    float thresholdDistance,
+    float& u,
+    float& v,
+    glm::vec3& n) {
+  // Find the shortest distance between two lines
+  glm::vec3 cd1 = ad1 - ac1;
+
+  float abMagSq = glm::dot(ab1, ab1);
+  float cdMagSq = glm::dot(cd1, cd1);
+  float abDotCd = glm::dot(ab1, cd1);
+
+  float acDotAb = glm::dot(ac1, ab1);
+  float acDotCd = glm::dot(ac1, cd1);
+
+  float det = abMagSq * -cdMagSq + abDotCd * abDotCd;
+  if (det != 0.0f) {
+    det = 1.0f / det;
+    u = (acDotAb * -cdMagSq + abDotCd * acDotCd) * det;
+    v = (abMagSq * acDotCd - acDotAb * abDotCd) * det;
+  } else {
+    float u0 = 0.0f;
+    float u1 = 1.0f;
+    float v0 = glm::dot(ac1, ab1);
+    float v1 = glm::dot(ad1, ab1);
+
+    bool flip0 = false;
+    bool flip1 = false;
+
+    if (u0 > u1) {
+      std::swap(u0, u1);
+      flip0 = true;
+    }
+
+    if (v0 > v1) {
+      std::swap(v0, v1);
+      flip1 = true;
+    }
+
+    if (u0 >= v1) {
+      u = flip0 ? 1.0f : 0.0f;
+      v = flip1 ? 0.0f : 1.0f;
+    } else if (v0 >= u1) {
+      u = flip0 ? 0.0f : 1.0f;
+      v = flip1 ? 1.0f : 0.0f;
+    } else {
+      float mid = (u0 > v0) ? (u0 + v1) * 0.5f : (v0 + u1) * 0.5f;
+      u = (u0 == u1) ? 0.5f : (mid - u0) / (u1 - u0);
+      v = (v0 == v1) ? 0.5f : (mid - v0) / (v1 - v0);
+    }
+  }
+
+  u = glm::clamp(u, 0.0f, 1.0f);
+  v = glm::clamp(v, 0.0f, 1.0f);
+
+  if ((u == 0.0f || u == 1.0f) && (v == 0.0f || v == 1.0f)) {
+    // This case amounts to vertex-vertex collision with thickness
+    // which we do not want to consider.
+    return std::nullopt;
+  }
+
+  glm::vec3 q0 = glm::mix(glm::vec3(0.0f), ab1, u);
+  glm::vec3 q1 = glm::mix(ac1, ad1, v);
+
+  // TODO: Is this used later?
+  n = q1 - q0;
+  float dist = glm::length(n);
+  n /= dist;
+
+  if (dist < thresholdDistance) {
+    return 1.0f;
+  }
+
+  return std::nullopt;
 }
 
 std::optional<float> edgeEdgeCCD(
@@ -307,79 +404,19 @@ std::optional<float> edgeEdgeCCD(
     const glm::vec3& ad0,
     const glm::vec3& ab1,
     const glm::vec3& ac1,
-    const glm::vec3& ad1) {
+    const glm::vec3& ad1,
+    const glm::vec3& tri0N,
+    float thresholdDistance,
+    glm::vec2& uv,
+    glm::vec3& n) {
   // TODO: Conservative test for early exit??
-  // Find the shortest distance between two lines
-  {
-    glm::vec3 cd1 = ad1 - ac1;
-
-    float abMagSq = glm::dot(ab1, ab1);
-    float cdMagSq = glm::dot(cd1, cd1);
-    float abDotCd = glm::dot(ab1, cd1);
-
-    float acDotAb = glm::dot(ac1, ab1);
-    float acDotCd = glm::dot(ac1, cd1);
-
-    float det = abMagSq * -cdMagSq + abDotCd * abDotCd;
-    float u = 0.0f;
-    float v = 0.0f;
-    if (det != 0.0f) {
-      det = 1.0f / det;
-      float u = (acDotAb * -cdMagSq + abDotCd * acDotCd) * det;
-      float v = (abMagSq * acDotCd - acDotAb * abDotCd) * det;
-    } else {
-      float u0 = 0.0f;
-      float u1 = 1.0f;
-      float v0 = glm::dot(ac1, ab1);
-      float v1 = glm::dot(ad1, ab1);
-
-      bool flip0 = false;
-      bool flip1 = false;
-
-      if (u0 > u1) {
-        std::swap(u0, u1);
-        flip0 = true;
-      }
-
-      if (v0 > v1) {
-        std::swap(v0, v1);
-        flip1 = true;
-      }
-
-      if (u0 >= v1) {
-        u = flip0 ? 1.0f : 0.0f;
-        v = flip1 ? 0.0f : 1.0f;
-      } else if (v0 >= u1) {
-        u = flip0 ? 0.0f : 1.0f;
-        v = flip1 ? 1.0f : 0.0f;
-      } else {
-        float mid = (u0 > v0) ? (u0 + v1) * 0.5f : (v0 + u1) * 0.5f;
-        u = (u0 == u1) ? 0.5f : (mid - u0) / (u1 - u0);
-        v = (v0 == v1) ? 0.5f : (mid - v0) / (v1 - v0);
-      }
-    }
-
-    u = glm::clamp(u, 0.0f, 1.0f);
-    v = glm::clamp(v, 0.0f, 1.0f);
-
-    glm::vec3 q0 = glm::mix(glm::vec3(0.0f), ab1, u);
-    glm::vec3 q1 = glm::mix(ac1, ad1, v);
-
-    glm::vec3 n = q0 - q1;
-    float dist = glm::length(n);
-    n /= dist;
-
-    float thickness = 0.5f;
-    if (dist < thickness) {
-      return 1.0f;
-    }
-  }
-
   glm::vec3 abd = ab1 - ab0;
   glm::vec3 acd = ac1 - ac0;
   glm::vec3 add = ad1 - ad0;
 
-  // Look for a ray-plane intersection throughout the interval
+  // Look for any coplanarity case during the interval
+  // TODO: This does not consider multiple cases of coplanarity
+  // within the interval.
   CubicExpression expression{};
   expandTerm(ab0.x, ac0.y, ad0.z, abd.x, acd.y, add.z, expression);
   expandTerm(-ab0.x, ad0.y, ac0.z, -abd.x, add.y, acd.z, expression);
@@ -388,11 +425,12 @@ std::optional<float> edgeEdgeCCD(
   expandTerm(ad0.x, ab0.y, ac0.z, add.x, abd.y, acd.z, expression);
   expandTerm(-ad0.x, ac0.y, ab0.z, -add.x, acd.y, abd.z, expression);
 
-  std::optional<float> t = expression.findRootInInterval();
+  // std::optional<float> t = expression.findRootInInterval();
+  std::optional<float> t = expression.fastFindRootInInterval();
 
-  // Check
   if (!t) {
-    return std::nullopt;
+    // Fall-back to static edge-edge collision at t=1.
+    return staticEdgeEdgeCollision(ab1, ac1, ad1, thresholdDistance, uv.x, uv.y, n);
   }
 
   glm::vec3 abt = ab0 + abd * *t;
@@ -400,20 +438,51 @@ std::optional<float> edgeEdgeCCD(
   glm::vec3 adt = ad0 + add * *t;
   glm::vec3 cdt = adt - act;
 
-  glm::vec3 nt = glm::normalize(glm::cross(abt, cdt));
+  n = glm::cross(abt, cdt);
+  float nMag = glm::length(n);
+
+  // Special handling for parallel lines
+  if (nMag < 0.0001f) {
+    glm::vec3 sep = glm::cross(abt, act);
+    float sepMag = glm::length(sep);
+
+    if (sepMag < 0.0001f) {
+      // The lines are colinear
+      float abMagSq = glm::dot(abt, abt);
+      // The start and end of cd as projected onto ab
+      float cdStart = glm::dot(abt, act);
+      float cdEnd = glm::dot(abt, adt);
+
+      if (cdStart > cdEnd) {
+        std::swap(cdStart, cdEnd);
+      }
+
+      // Check if the 1D ranges intersect
+      if (cdStart <= abMagSq && cdEnd >= 0.0f) {
+        // Pick an arbitrary direction away from the triangle.
+        n = glm::normalize(glm::cross(abt, tri0N));
+        return *t;
+      }
+    }
+
+    return std::nullopt;
+  }
+
+  n /= nMag;
 
   // Check for 2D line intersection at time t
 
   // abt * u = act + cdt * v
   // abt * u - cdt * v = act
   // [abt, -cdt] [u,v]t = act
-  glm::mat3 M(abt, -cdt, nt);
-  glm::vec2 uv = glm::inverse(M) * act;
+  glm::mat3 M(abt, -cdt, n);
+  uv = glm::vec2(glm::inverse(M) * act);
 
   if (uv.x < 0.0f || uv.x > 1.0f || uv.y < 0.0f || uv.y > 1.0f) {
     return std::nullopt;
   }
 
+  // return glm::max(*t, 0.0001f);
   return t;
 }
 } // namespace CollisionDetection

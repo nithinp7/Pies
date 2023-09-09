@@ -1,5 +1,7 @@
 #include "CollisionConstraint.h"
 
+#include <glm/common.hpp>
+
 #include <algorithm>
 #include <optional>
 
@@ -69,8 +71,13 @@ PointTriangleCollisionConstraint::PointTriangleCollisionConstraint(
     const Node& b,
     const Node& c,
     const Node& d,
-    float thickness_)
-    : nodeIds{a.id, b.id, c.id, d.id}, n(0.0f), thickness(thickness_) {
+    float thickness_,
+    const glm::vec3& barycentric,
+    float toi_)
+    : toi(toi_),
+      nodeIds{a.id, b.id, c.id, d.id},
+      n(0.0f),
+      thickness(thickness_) {
   Eigen::Matrix4f A = Eigen::Matrix4f::Zero();
   A.coeffRef(1, 0) = -1.0f;
   A.coeffRef(2, 0) = -1.0f;
@@ -81,6 +88,29 @@ PointTriangleCollisionConstraint::PointTriangleCollisionConstraint(
   A.coeffRef(3, 3) = 1.0f;
 
   this->AtA = A.transpose() * A;
+
+  // Determine which side of the triangle the point starts on
+  glm::vec3 n = glm::cross(
+      c.prevPosition - b.prevPosition,
+      d.prevPosition - b.prevPosition);
+
+  this->side =
+      (glm::dot(n, a.prevPosition - b.prevPosition) >= 0.0f) ? 1.0f : -1.0f;
+  n *= this->side;
+
+  glm::vec3 triVel = barycentric.x * (b.position - b.prevPosition) +
+                     barycentric.y * (c.position - c.prevPosition) +
+                     barycentric.z * (d.position - d.prevPosition);
+  glm::vec3 relativeVelocity = a.position - a.prevPosition - triVel;
+
+  disp = toi * relativeVelocity +
+         (1.0f - toi) * (glm::mat3(1.0f) - 1.5f * glm::outerProduct(n, n)) *
+             relativeVelocity;
+
+  this->projectedPositions[0] = a.prevPosition - 0.5f * disp;
+  this->projectedPositions[1] = b.prevPosition + 0.5f * disp * barycentric.x;
+  this->projectedPositions[2] = c.prevPosition + 0.5f * disp * barycentric.y;
+  this->projectedPositions[3] = d.prevPosition + 0.5f * disp * barycentric.z;
 }
 
 void PointTriangleCollisionConstraint::projectToAuxiliaryVariable(
@@ -92,34 +122,34 @@ void PointTriangleCollisionConstraint::projectToAuxiliaryVariable(
   const Node& nodeC = nodes[nodeIds[2]];
   const Node& nodeD = nodes[nodeIds[3]];
 
-  this->projectedPositions[0] = nodeA.position;
-  this->projectedPositions[1] = nodeB.position;
-  this->projectedPositions[2] = nodeC.position;
-  this->projectedPositions[3] = nodeD.position;
+  // If the toi is 1.0f, there is going to be no rebound, so just
+  // push the nodes apart to the threshold distance.
 
-  glm::vec3 c = nodeC.position - nodeB.position;
-  glm::vec3 d = nodeD.position - nodeB.position;
-  glm::vec3 p = nodeA.position - nodeB.position;
+  if (toi == 1.0f) {
+    this->projectedPositions[0] = nodeA.position;
+    this->projectedPositions[1] = nodeB.position;
+    this->projectedPositions[2] = nodeC.position;
+    this->projectedPositions[3] = nodeD.position;
 
-  glm::vec3 n = glm::normalize(glm::cross(
-      nodeC.position - nodeB.position,
-      nodeD.position - nodeB.position));
+    glm::vec3 c = nodeC.position - nodeB.position;
+    glm::vec3 d = nodeD.position - nodeB.position;
+    glm::vec3 p = nodeA.position - nodeB.position;
 
-  float nDotP = glm::dot(n, p);
-  if (nDotP < thickness) {
-    glm::vec3 disp = (thickness - nDotP) * n;
+    glm::vec3 n = this->side * glm::normalize(glm::cross(
+                                   nodeC.position - nodeB.position,
+                                   nodeD.position - nodeB.position));
 
-    float wTriSum = nodeB.invMass + nodeC.invMass + nodeD.invMass;
-    float wSum = nodeA.invMass + wTriSum;
+    float nDotP = glm::dot(n, p);
+    if (nDotP < thickness) {
+      glm::vec3 disp = (thickness - nDotP) * n;
 
-    // TODO: Use relative coords
+      this->projectedPositions[0] += disp;
+      // this->projectedPositions[1] = glm::vec3(0.0f);
+      // this->projectedPositions[2] = glm::vec3(0.0f);
+      // this->projectedPositions[3] = glm::vec3(0.0f);
 
-    this->projectedPositions[0] += disp;
-    // this->projectedPositions[1] = glm::vec3(0.0f);
-    // this->projectedPositions[2] = glm::vec3(0.0f);
-    // this->projectedPositions[3] = glm::vec3(0.0f);
-
-    colliding = true;
+      colliding = true;
+    }
   }
 }
 
@@ -129,46 +159,18 @@ void PointTriangleCollisionConstraint::stabilizeCollisions(
   Node& nodeB = nodes[nodeIds[1]];
   Node& nodeC = nodes[nodeIds[2]];
   Node& nodeD = nodes[nodeIds[3]];
-
-  // If the point is behind the triangle but within a desired thickness
-  // just push it out.
-  glm::vec3 c = nodeC.position - nodeB.position;
-  glm::vec3 d = nodeD.position - nodeB.position;
-  glm::vec3 p = nodeA.position - nodeB.position;
-
-  glm::vec3 n = glm::normalize(glm::cross(
-      nodeC.position - nodeB.position,
-      nodeD.position - nodeB.position));
-
-  float nDotP = glm::dot(n, p);
-  if (nDotP < thickness) {
-    glm::vec3 disp = (thickness - nDotP) * n;
-
-    float wTriSum = nodeB.invMass + nodeC.invMass + nodeD.invMass;
-    float wSum = nodeA.invMass + wTriSum;
-
-    // TODO: Use relative coords
-    nodeA.position += disp * nodeA.invMass / wSum;
-    nodeB.position -= disp * wTriSum / wSum;
-    nodeC.position -= disp * wTriSum / wSum;
-    nodeD.position -= disp * wTriSum / wSum;
-
-    // This prevents spuriously adding velocity to the system
-    nodeA.prevPosition += disp * nodeA.invMass / wSum;
-    nodeB.prevPosition -= disp * wTriSum / wSum;
-    nodeC.prevPosition -= disp * wTriSum / wSum;
-    nodeD.prevPosition -= disp * wTriSum / wSum;
-  }
 }
 
-void PointTriangleCollisionConstraint::setupCollisionMatrix(
-    Eigen::SparseMatrix<float>& systemMatrix) const {
+void PointTriangleCollisionConstraint::setupTriplets(
+    std::vector<Eigen::Triplet<float>>& triplets) const {
   for (uint32_t i = 0; i < 4; ++i) {
     uint32_t nodeId_i = this->nodeIds[i];
     for (uint32_t j = 0; j < 4; ++j) {
       uint32_t nodeId_j = this->nodeIds[j];
-      systemMatrix.coeffRef(nodeId_i, nodeId_j) +=
-          this->w * this->AtA.coeff(i, j);
+      triplets.emplace_back(
+          nodeId_i,
+          nodeId_j,
+          this->w * this->AtA.coeff(i, j));
     }
   }
 }
@@ -197,8 +199,12 @@ EdgeCollisionConstraint::EdgeCollisionConstraint(
     const Node& a,
     const Node& b,
     const Node& c,
-    const Node& d)
-    : nodeIds{a.id, b.id, c.id, d.id} {
+    const Node& d,
+    float thickness_,
+    float toi_,
+    const glm::vec2& uv_,
+    const glm::vec3& n_)
+    : toi(toi_), nodeIds{a.id, b.id, c.id, d.id}, uv(uv_), n(n_), thickness(thickness_) {
   Eigen::Matrix4f A = Eigen::Matrix4f::Zero();
   A.coeffRef(1, 0) = -1.0f;
   A.coeffRef(2, 0) = -1.0f;
@@ -210,16 +216,20 @@ EdgeCollisionConstraint::EdgeCollisionConstraint(
 
   this->AtA = A.transpose() * A;
 
-  glm::vec3 ab = b.position - a.position;
-  glm::vec3 ac = c.position - a.position;
-  glm::vec3 ad = d.position - a.position;
+  glm::vec3 int0Vel =
+      glm::mix(a.position - a.prevPosition, b.position - b.prevPosition, uv_.x);
+  glm::vec3 int1Vel =
+      glm::mix(c.position - c.prevPosition, d.position - d.prevPosition, uv_.y);
+  glm::vec3 relativeVelocity = int1Vel - int0Vel;
 
-  glm::vec3 n0 = glm::normalize(glm::cross(ab, ad - ac));
+  disp = toi * relativeVelocity +
+         (1.0f - toi) * (glm::mat3(1.0f) - 1.5f * glm::outerProduct(n, n)) *
+             relativeVelocity;
 
-  float n0DotL1 = glm::max(glm::dot(n0, ab), 0.0f);
-  float n0DotL2 = glm::min(glm::dot(n0, ac), glm::dot(n0, ad));
-
-  orientation = n0DotL1 < n0DotL2 ? 1.0f : -1.0f;
+  this->projectedPositions[0] = a.prevPosition - 0.5f * disp * (1.0f - uv_.x);
+  this->projectedPositions[1] = b.prevPosition - 0.5f * disp * uv_.x;
+  this->projectedPositions[2] = c.prevPosition + 0.5f * disp * (1.0f - uv_.y);
+  this->projectedPositions[3] = d.prevPosition + 0.5f * disp * uv_.y;
 }
 
 void EdgeCollisionConstraint::projectToAuxiliaryVariable(
@@ -229,189 +239,41 @@ void EdgeCollisionConstraint::projectToAuxiliaryVariable(
   const Node& nodeC = nodes[nodeIds[2]];
   const Node& nodeD = nodes[nodeIds[3]];
 
-  this->projectedPositions[0] = nodeA.position;
-  this->projectedPositions[1] = nodeB.position;
-  this->projectedPositions[2] = nodeC.position;
-  this->projectedPositions[3] = nodeD.position;
+  if (toi == 1.0f) {
+    this->projectedPositions[0] = nodeA.position;
+    this->projectedPositions[1] = nodeB.position;
+    this->projectedPositions[2] = nodeC.position;
+    this->projectedPositions[3] = nodeD.position;
 
-  glm::vec3 ab = nodeB.position - nodeA.position;
-  glm::vec3 ac = nodeC.position - nodeA.position;
-  glm::vec3 ad = nodeD.position - nodeA.position;
+    glm::vec3 ab = nodeB.position - nodeA.position;
+    glm::vec3 ac = nodeC.position - nodeA.position;
+    glm::vec3 ad = nodeD.position - nodeA.position;
 
-  glm::vec3 cd = nodeD.position - nodeC.position;
+    float l0 = glm::dot(ab * uv.x, n);//glm::max(glm::dot(ab, n), 0.0f);
+    float l1 = glm::dot(glm::mix(ac, ad, uv.y), n);////glm::min(glm::dot(ac, n), glm::dot(ad, n));
 
-  float abMagSq = glm::dot(ab, ab);
-  float cdMagSq = glm::dot(cd, cd);
-  float abDotCd = glm::dot(ab, cd);
-
-  float acDotAb = glm::dot(ac, ab);
-  float acDotCd = glm::dot(ac, cd);
-
-  float det = abMagSq * -cdMagSq + abDotCd * abDotCd;
-  float u = 0.0f;
-  float v = 0.0f;
-  if (det != 0.0f) {
-    det = 1.0f / det;
-    float u = (acDotAb * -cdMagSq + abDotCd * acDotCd) * det;
-    float v = (abMagSq * acDotCd - acDotAb * abDotCd) * det;
-  } else {
-    float u0 = glm::dot(nodeA.position, ab);
-    float u1 = glm::dot(nodeB.position, ab);
-    float v0 = glm::dot(nodeC.position, ab);
-    float v1 = glm::dot(nodeD.position, ab);
-
-    bool flip0 = false;
-    bool flip1 = false;
-
-    if (u0 > u1) {
-      std::swap(u0, u1);
-      flip0 = true;
+    if (l0 < l1 + thickness) {
+      glm::vec3 disp = (l1 + thickness - l0) * n;
+      this->projectedPositions[0] += 0.5f * disp * (1.0f - uv.x);
+      this->projectedPositions[1] += 0.5f * disp * uv.x;
+      this->projectedPositions[2] -= 0.5f * disp * (1.0f - uv.y);
+      this->projectedPositions[3] -= 0.5f * disp * uv.y;
     }
-
-    if (v0 > v1) {
-      std::swap(v0, v1);
-      flip1 = true;
-    }
-
-    if (u0 >= v1) {
-      u = flip0 ? 1.0f : 0.0f;
-      v = flip1 ? 0.0f : 1.0f;
-    } else if (v0 >= u1) {
-      u = flip0 ? 0.0f : 1.0f;
-      v = flip1 ? 1.0f : 0.0f;
-    } else {
-      float mid = (u0 > v0) ? (u0 + v1) * 0.5f : (v0 + u1) * 0.5f;
-      u = (u0 == u1) ? 0.5f : (mid - u0) / (u1 - u0);
-      v = (v0 == v1) ? 0.5f : (mid - v0) / (v1 - v0);
-    }
-  }
-
-  u = glm::clamp(u, 0.0f, 1.0f);
-  v = glm::clamp(v, 0.0f, 1.0f);
-
-  glm::vec3 q0 = glm::mix(glm::vec3(0.0f), ab, u);
-  glm::vec3 q1 = glm::mix(ac, ad, v);
-
-  glm::vec3 n = q0 - q1;
-  float dist = glm::length(n);
-  n /= dist;
-
-  if (dist < thickness) {
-    glm::vec3 disp = -(thickness - dist) * n;
-
-    float s = nodeA.invMass * (1.0f - u) * (1.0f - u) + nodeB.invMass * u * u +
-              nodeC.invMass * (1.0f - v) * (1.0f - v) + nodeD.invMass * v * v;
-
-    if (s == 0.0f) {
-      return;
-    }
-
-    this->projectedPositions[0] += disp * nodeA.invMass * (1.0f - u) / s;
-    this->projectedPositions[1] += disp * nodeB.invMass * u / s;
-    this->projectedPositions[2] -= disp * nodeC.invMass * (1.0f - v) / s;
-    this->projectedPositions[3] -= disp * nodeD.invMass * v / s;
   }
 }
 
-void EdgeCollisionConstraint::stabilizeCollisions(std::vector<Node>& nodes) {
-  Node& nodeA = nodes[nodeIds[0]];
-  Node& nodeB = nodes[nodeIds[1]];
-  Node& nodeC = nodes[nodeIds[2]];
-  Node& nodeD = nodes[nodeIds[3]];
+void EdgeCollisionConstraint::stabilizeCollisions(std::vector<Node>& nodes) {}
 
-  glm::vec3 ab = nodeB.position - nodeA.position;
-  glm::vec3 ac = nodeC.position - nodeA.position;
-  glm::vec3 ad = nodeD.position - nodeA.position;
-
-  glm::vec3 cd = nodeD.position - nodeC.position;
-
-  float abMagSq = glm::dot(ab, ab);
-  float cdMagSq = glm::dot(cd, cd);
-  float abDotCd = glm::dot(ab, cd);
-
-  float acDotAb = glm::dot(ac, ab);
-  float acDotCd = glm::dot(ac, cd);
-
-  float det = abMagSq * -cdMagSq + abDotCd * abDotCd;
-  float u = 0.0f;
-  float v = 0.0f;
-  if (det != 0.0f) {
-    det = 1.0f / det;
-    float u = (acDotAb * -cdMagSq + abDotCd * acDotCd) * det;
-    float v = (abMagSq * acDotCd - acDotAb * abDotCd) * det;
-  } else {
-    float u0 = glm::dot(nodeA.position, ab);
-    float u1 = glm::dot(nodeB.position, ab);
-    float v0 = glm::dot(nodeC.position, ab);
-    float v1 = glm::dot(nodeD.position, ab);
-
-    bool flip0 = false;
-    bool flip1 = false;
-
-    if (u0 > u1) {
-      std::swap(u0, u1);
-      flip0 = true;
-    }
-
-    if (v0 > v1) {
-      std::swap(v0, v1);
-      flip1 = true;
-    }
-
-    if (u0 >= v1) {
-      u = flip0 ? 1.0f : 0.0f;
-      v = flip1 ? 0.0f : 1.0f;
-    } else if (v0 >= u1) {
-      u = flip0 ? 0.0f : 1.0f;
-      v = flip1 ? 1.0f : 0.0f;
-    } else {
-      float mid = (u0 > v0) ? (u0 + v1) * 0.5f : (v0 + u1) * 0.5f;
-      u = (u0 == u1) ? 0.5f : (mid - u0) / (u1 - u0);
-      v = (v0 == v1) ? 0.5f : (mid - v0) / (v1 - v0);
-    }
-  }
-
-  u = glm::clamp(u, 0.0f, 1.0f);
-  v = glm::clamp(v, 0.0f, 1.0f);
-
-  glm::vec3 q0 = glm::mix(glm::vec3(0.0f), ab, u);
-  glm::vec3 q1 = glm::mix(ac, ad, v);
-
-  glm::vec3 n = q0 - q1;
-  float dist = glm::length(n);
-  n /= dist;
-
-  if (dist < thickness) {
-    glm::vec3 disp = (thickness - dist) * n;
-
-    float s = nodeA.invMass * (1.0f - u) * (1.0f - u) + nodeB.invMass * u * u +
-              nodeC.invMass * (1.0f - v) * (1.0f - v) + nodeD.invMass * v * v;
-
-    if (s == 0.0f) {
-      return;
-    }
-
-    nodeA.position += disp * nodeA.invMass * (1.0f - u) / s;
-    nodeB.position += disp * nodeB.invMass * u / s;
-    nodeC.position -= disp * nodeC.invMass * (1.0f - v) / s;
-    nodeD.position -= disp * nodeD.invMass * v / s;
-
-    // This prevents spuriously adding velocity to the system
-    nodeA.prevPosition += disp * nodeA.invMass * (1.0f - u) / s;
-    nodeB.prevPosition += disp * nodeB.invMass * u / s;
-    nodeC.prevPosition -= disp * nodeC.invMass * (1.0f - v) / s;
-    nodeD.prevPosition -= disp * nodeD.invMass * v / s;
-  }
-}
-
-void EdgeCollisionConstraint::setupCollisionMatrix(
-    Eigen::SparseMatrix<float>& systemMatrix) const {
+void EdgeCollisionConstraint::setupTriplets(
+    std::vector<Eigen::Triplet<float>>& triplets) const {
   for (uint32_t i = 0; i < 4; ++i) {
     uint32_t nodeId_i = this->nodeIds[i];
     for (uint32_t j = 0; j < 4; ++j) {
       uint32_t nodeId_j = this->nodeIds[j];
-      systemMatrix.coeffRef(nodeId_i, nodeId_j) +=
-          this->w * this->AtA.coeff(i, j);
+      triplets.emplace_back(
+          nodeId_i,
+          nodeId_j,
+          this->w * this->AtA.coeff(i, j));
     }
   }
 }
@@ -436,21 +298,32 @@ void EdgeCollisionConstraint::setupGlobalForceVector(
   }
 }
 
-StaticCollisionConstraint::StaticCollisionConstraint(const Node& node)
-    : nodeId(node.id) {}
+StaticCollisionConstraint::StaticCollisionConstraint(
+    const Node& node,
+    float thickness_,
+    float toi_)
+    : thickness(thickness_), toi(toi_), nodeId(node.id) {
 
-void StaticCollisionConstraint::setupCollisionMatrix(
-    Eigen::SparseMatrix<float>& systemMatrix) const {
-  systemMatrix.coeffRef(nodeId, nodeId) += this->w;
+  glm::vec3 vt = -(node.position - node.prevPosition);
+  glm::vec3 n(0.0f, 1.0f, 0.0f);
+  glm::vec3 disp =
+      toi * vt +
+      (1.0f - toi) * (glm::mat3(1.0f) - 1.5f * glm::outerProduct(n, n)) * vt;
+  projectedPosition = node.prevPosition - disp;
+  // // projectedPosition.y = glm::max(projectedPosition.y, thickness);
+}
+
+void StaticCollisionConstraint::setupTriplets(
+    std::vector<Eigen::Triplet<float>>& triplets) const {
+  triplets.emplace_back(nodeId, nodeId, this->w);
 }
 
 void StaticCollisionConstraint::projectToAuxiliaryVariable(
     const std::vector<Node>& nodes) {
-  const Node& node = nodes[nodeId];
-  projectedPosition = node.position;
-
-  if (node.position.y < 0.0f) {
-    projectedPosition.y = 0.0f;
+  // const Node& node = nodes[nodeId];
+  // projectedPosition = node.position;
+  if (toi == 1.0f && nodes[nodeId].position.y < thickness) {
+    projectedPosition.y = thickness;
   }
 }
 

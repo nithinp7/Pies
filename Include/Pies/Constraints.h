@@ -1,8 +1,11 @@
 #pragma once
 
 #include "Node.h"
+#include "eig3.h"
 
 #include <Eigen/Core>
+#include <Eigen/Dense>
+#include <Eigen/SVD>
 #include <Eigen/Sparse>
 
 #include <array>
@@ -36,6 +39,7 @@ protected:
   // See the Projective Dynamics paper for more information about A and B.
   Eigen::Matrix<float, NodeCount, NodeCount> _AtA;
   Eigen::Matrix<float, NodeCount, NodeCount> _AtB;
+  Eigen::Matrix<float, NodeCount, 3> _wAtBp;
 
   // A list of nodes involved in this constraint.
   std::array<uint32_t, NodeCount> _nodeIds;
@@ -87,20 +91,11 @@ public:
    * @param forceVector The global vector of forces on each axis of each node.
    */
   void setupGlobalForceVector(Eigen::MatrixXf& forceVector) const {
-    // Set up projected nodes as eigen matrix
-    Eigen::Matrix<float, NodeCount, 3> p;
-    for (uint32_t i = 0; i < NodeCount; ++i) {
-      p.coeffRef(i, 0) = this->_projectedConfig[i].x;
-      p.coeffRef(i, 1) = this->_projectedConfig[i].y;
-      p.coeffRef(i, 2) = this->_projectedConfig[i].z;
-    }
-
-    Eigen::Matrix<float, NodeCount, 3> AtBp = this->_AtB * p;
     for (uint32_t i = 0; i < NodeCount; ++i) {
       uint32_t nodeId_i = this->_nodeIds[i];
-      forceVector.coeffRef(nodeId_i, 0) += this->_w * AtBp.coeff(i, 0);
-      forceVector.coeffRef(nodeId_i, 1) += this->_w * AtBp.coeff(i, 1);
-      forceVector.coeffRef(nodeId_i, 2) += this->_w * AtBp.coeff(i, 2);
+      forceVector.coeffRef(nodeId_i, 0) += this->_wAtBp.coeff(i, 0);
+      forceVector.coeffRef(nodeId_i, 1) += this->_wAtBp.coeff(i, 1);
+      forceVector.coeffRef(nodeId_i, 2) += this->_wAtBp.coeff(i, 2);
     }
   }
 
@@ -111,6 +106,16 @@ public:
    */
   void projectToAuxiliaryVariable(const std::vector<Node>& nodes) {
     this->_projection(nodes, this->_nodeIds, this->_projectedConfig);
+
+    // Set up projected nodes as eigen matrix
+    Eigen::Matrix<float, NodeCount, 3> p;
+    for (uint32_t i = 0; i < NodeCount; ++i) {
+      p.coeffRef(i, 0) = this->_projectedConfig[i].x;
+      p.coeffRef(i, 1) = this->_projectedConfig[i].y;
+      p.coeffRef(i, 2) = this->_projectedConfig[i].z;
+    }
+
+    this->_wAtBp = this->_w * this->_AtB * p;
   }
 
   /**
@@ -139,9 +144,7 @@ public:
 
   void setWeight(float w) { this->_w = w; }
 
-  TProjection& getProjection() {
-    return this->_projection;
-  }
+  TProjection& getProjection() { return this->_projection; }
 };
 
 struct DistanceConstraintProjection {
@@ -166,51 +169,8 @@ struct PositionConstraintProjection {
       std::array<glm::vec3, 1>& projected) const;
 };
 typedef Constraint<1, PositionConstraintProjection> PositionConstraint;
-PositionConstraint createPositionConstraint(uint32_t id, const Node& node, float w);
-
-struct TetrahedralConstraintProjection {
-  glm::mat3 Q;
-  glm::mat3 Qinv;
-
-  float minStrain;
-  float maxStrain;
-
-  void operator()(
-      const std::vector<Node>& nodes,
-      const std::array<uint32_t, 4>& nodeIds,
-      std::array<glm::vec3, 4>& projected) const;
-};
-typedef Constraint<4, TetrahedralConstraintProjection> TetrahedralConstraint;
-TetrahedralConstraint createTetrahedralConstraint(
-    uint32_t id,
-    float w,
-    const Node& a,
-    const Node& b,
-    const Node& c,
-    const Node& d,
-    float minStrain = 0.8f,
-    float maxStrain = 1.0f);
-
-struct VolumeConstraintProjection {
-  glm::mat3 Qinv;
-  float minOmega;
-  float maxOmega;
-
-  void operator()(
-      const std::vector<Node>& nodes,
-      const std::array<uint32_t, 4>& nodeIds,
-      std::array<glm::vec3, 4>& projected) const;
-};
-typedef Constraint<4, VolumeConstraintProjection> VolumeConstraint;
-VolumeConstraint createVolumeConstraint(
-    uint32_t id,
-    float w,
-    const Node& a,
-    const Node& b,
-    const Node& c,
-    const Node& d,
-    float compression = 1.0f,
-    float stretching = 1.0f);
+PositionConstraint
+createPositionConstraint(uint32_t id, const Node& node, float w);
 
 struct BendConstraintProjection {
   float initialAngle;
