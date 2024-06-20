@@ -73,6 +73,10 @@ public:
   void clear();
 
   // Utilities for importing meshes
+  void addClothMesh(
+      const std::vector<glm::vec3>& vertices,
+      const std::vector<uint32_t>& triIndices,
+      float w);
   void addNodes(const std::vector<glm::vec3>& vertices);
   void addTriMeshVolume(
       const std::vector<glm::vec3>& vertices,

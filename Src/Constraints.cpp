@@ -373,7 +373,7 @@ BendConstraint createBendConstraint(
     const Node& x3,
     const Node& x4) {
 
-  // Node x2 and x3 comprise the shared edge of the adjacent triangles
+  // Node x1 and x2 comprise the shared edge of the adjacent triangles
 
   glm::vec3 p2 = x2.position - x1.position;
   glm::vec3 p3 = x3.position - x1.position;
